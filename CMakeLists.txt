@@ -23,7 +23,12 @@ endif()
 
 include_directories(include)
 
-add_executable (CMakeTarget "main.cpp" "main.h")
+add_executable (
+  CMakeTarget
+  "src/main.cpp"
+  "src/main.h"
+  "src/DBClass.cpp"
+)
 
 
 # TODO: Add tests and install targets if needed.
