@@ -1,0 +1,54 @@
+# CMake generated files and directories
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+Makefile
+compile_commands.json
+_deps/
+
+# Common build output directories
+[Bb]uild/
+[Oo]ut/
+bin/
+lib/
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# IDE/Editor specific files
+.idea/         # CLion
+.vs/           # Visual Studio
+*.layout
+*.depend
+*.aps
+*.d
+
+# OS generated files
+.DS_Store      # macOS Finder files
+/build*/       # Generic build directories
