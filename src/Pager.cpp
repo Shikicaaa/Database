@@ -31,6 +31,10 @@ Page* Pager::get_page(uint32_t pageID){
     file.seekg(offset);
     file.read(new_page->data, PAGE_SIZE);
 
+    if(!file){
+        file.clear();
+    }
+
     Page* raw_page = new_page.get();
 
     page_cache[pageID] = std::move(new_page);
@@ -41,7 +45,7 @@ Page* Pager::get_page(uint32_t pageID){
 void Pager::flush(uint32_t pageID)
 {
     auto it = page_cache.find(pageID);
-    
+
     if (it != page_cache.end()) {
         Page* page = it->second.get();
         

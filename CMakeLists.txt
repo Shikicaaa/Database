@@ -31,6 +31,8 @@ add_executable (
   "src/main.h"
   "src/Pager.cpp"
   "src/Pager.h"
+  "src/SlottedPage.cpp"
+  "src/SlottedPage.h"
 )
 
 
