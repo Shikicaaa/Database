@@ -1,6 +1,7 @@
 ﻿#include "main.h"
 #include "Pager.h"
 #include "SlottedPage.h"
+#include "BTree.h"
 
 std::vector<char> create_row(int id, std::string name, std::string last_name, double salary){
 	std::vector<char> buffer;
@@ -28,29 +29,21 @@ std::vector<char> create_row(int id, std::string name, std::string last_name, do
 
 int main()
 {
-	Pager pager("test.db");
+	Pager pager("test.db", "projekat");
 
-    Page* page0 = pager.get_page(0);
+	BTree bt(pager);
 
-    SlottedPage sp(page0->data);
-
-    std::vector<char> row1 = create_row(1, "Ana", "Ivanovic", 1500.0);
-    std::vector<char> row2 = create_row(2, "Rajovic", "Boban", 6420.0);
-
-    if (sp.insert_record(1, row1.data(), row1.size())) {
-        std::cout << "Row1" << std::endl;
-    } else {
-        std::cout << "No Space for row1" << std::endl;
-    }
-
-    if (sp.insert_record(2, row2.data(), row2.size())) {
-        std::cout << "Row2" << std::endl;
-    }else{
-        std::cout << "No Space for row2" << std::endl;
-
-	}
-
-    page0->is_dirty = true;
+	int i = 1;
+	std::vector<char> row = create_row(i++, "Rajovic", "Boban", 1234.0+i*2);
+	// while(bt.insert(1, row.data(), row.size())){
+	// 	row = create_row(i++, "Rajovic", "Boban", 1234.0+i*2);
+	// }
+	bt.insert(10, row.data(), row.size());
+	bt.insert(5, row.data(), row.size());
+	bt.insert(20, row.data(), row.size());
+	bt.insert(7, row.data(), row.size());
+	Page* p = pager.get_page(1);
+	p->is_dirty = true;
 
     return 0;
 }

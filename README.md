@@ -23,7 +23,7 @@ I am currently on **phase 1**.
 
 Checklist:
 
-- [ ] Read Page
+- [x] Read Page
 - [x] Write Page
 - [x] Page Cache
 - [ ] File Growth

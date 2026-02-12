@@ -33,6 +33,8 @@ add_executable (
   "src/Pager.h"
   "src/SlottedPage.cpp"
   "src/SlottedPage.h"
+  "src/BTree.h"
+  "src/BTree.cpp"
 )
 
 
