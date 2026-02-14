@@ -9,7 +9,8 @@ private:
     void split_leaf_node(uint32_t old_node_id);
     void split_internal_node(uint32_t old_node_id); 
     void insert_into_leaf(uint32_t leaf_id, uint32_t key, const void* data, uint16_t size);
-
+    void insert_into_parent(Page* old_node, uint32_t old_node_id, uint32_t key, uint32_t new_node_id);
+    uint32_t find_leaf_node(uint32_t leaf_key);
 public:
     BTree(Pager& p);
 

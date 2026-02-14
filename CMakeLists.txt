@@ -16,7 +16,7 @@ if(MSVC)
 add_compile_options(/W4)
 else()
 # Linux/Mac
-add_compile_options(-Wall -Wextra -Wpedantic )
+add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
 # if (CMAKE_VERSION VERSION_GREATER 3.12)

@@ -6,3 +6,5 @@ Smallest unit that can be written or read is a **page**. However we can only mak
 **Planes** are placed on a **Die**.
 **SSD** can have 1+ **dies**.
 SO: *die* > *plane* > *block* > *page* > *cell*
+
+When we do splitting, we split lower half to the new node and keep other half inside "old" node. Both nodes now have a parent that was always above them. Also all data is inside leaf nodes. 

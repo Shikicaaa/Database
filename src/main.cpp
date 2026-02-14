@@ -35,13 +35,13 @@ int main()
 
 	int i = 1;
 	std::vector<char> row = create_row(i++, "Rajovic", "Boban", 1234.0+i*2);
-	// while(bt.insert(1, row.data(), row.size())){
-	// 	row = create_row(i++, "Rajovic", "Boban", 1234.0+i*2);
-	// }
-	bt.insert(10, row.data(), row.size());
-	bt.insert(5, row.data(), row.size());
-	bt.insert(20, row.data(), row.size());
-	bt.insert(7, row.data(), row.size());
+	while(bt.insert(i, row.data(), row.size())){
+		row = create_row(i++, "Rajovic", "Boban", 1234.0+i*2);
+	}
+	// bt.insert(10, row.data(), row.size());
+	// bt.insert(5, row.data(), row.size());
+	// bt.insert(20, row.data(), row.size());
+	// bt.insert(7, row.data(), row.size());
 	Page* p = pager.get_page(1);
 	p->is_dirty = true;
 

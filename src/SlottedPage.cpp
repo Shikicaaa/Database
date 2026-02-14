@@ -83,6 +83,64 @@ bool SlottedPage::insert_record(uint32_t key, const void *record_data, uint16_t 
 
 }
 
+bool SlottedPage::insert_internal_cell(uint32_t key, uint32_t page_id){
+    PageHeader* h = header();
+
+    uint16_t cell_size = sizeof(InternalNodeCell);
+    uint16_t space_needed = cell_size + sizeof(uint16_t);
+
+    if(space_needed > h->free_end - h->free_start){
+        return false;
+    }
+
+    h->free_end -= cell_size;
+    uint16_t offset = h->free_end;
+
+    uint16_t* pointers = get_cell_pointers();
+
+    pointers[h->num_cells] = offset;
+
+    InternalNodeCell cell = {key, page_id};
+    std::memcpy(data+offset, &cell, sizeof(InternalNodeCell));
+    h->num_cells++;
+    h->free_start += sizeof(uint16_t);
+
+    return true;
+}
+
+// SlottedPage.cpp
+
+uint32_t SlottedPage::lookup_internal(uint32_t key)
+{
+    PageHeader* h = header();
+    uint16_t* pointers = get_cell_pointers();
+
+    std::cout << "SP: Internal Lookup for key " << key << " inside Node with " << h->num_cells << " cells.\n";
+
+    for(int i = 0; i < h->num_cells; i++){
+        uint16_t offset = pointers[i];
+        
+       
+        InternalNodeCell* cell = reinterpret_cast<InternalNodeCell*>(data + offset);
+
+        
+        /*
+        We look for first key that is greater than the key in the argument.
+        Internal node: [Ptr1] Key1 [Ptr2] Key2 [Ptr3]
+        Our structure: {Key1, Ptr1}, {Key2, Ptr2} ... and Right Child at the end
+        
+        If we look for 10, but cell has key 30, key 10 belongs to the left child node
+        in our case its Ptr1. If we go through every key and dont find the needed key we return the right child page id
+        and then we can do lookup from there.
+        */
+        if (key < cell->key) {
+            return cell->page_id;
+        }
+    }
+
+    return h->right_child_page_id;
+}
+
 std::optional<std::vector<char>> SlottedPage::get_record(uint32_t key)
 {
     PageHeader* h = header();
@@ -141,12 +199,12 @@ uint32_t SlottedPage::move_half(SlottedPage *dst)
             is_first = false;
         }
 
-        dst->insert_record(separator_key, record_data, data_len);
+        dst->insert_record(key, record_data, data_len);
     }
 
     h->num_cells = split_cells;
 
-    h->free_start = sizeof(PageHeader) + sizeof(split_cells * sizeof(uint16_t));
+    h->free_start = sizeof(PageHeader) + (split_cells * sizeof(uint16_t));
 
     return separator_key;
 }
@@ -159,4 +217,17 @@ void SlottedPage::init_as_leaf_node(bool is_root) {
     h->parent_page_id = 0;
     h->free_start = sizeof(PageHeader);
     h->free_end = PAGE_SIZE;
+}
+
+uint32_t SlottedPage::get_first_key() {
+    PageHeader* h = header();
+    if (h->num_cells == 0) return 0;
+
+    uint16_t* pointers = get_cell_pointers();
+    uint16_t first_offset = pointers[0];
+
+    uint32_t key;
+    std::memcpy(&key, data + first_offset, sizeof(uint32_t));
+    
+    return key;
 }

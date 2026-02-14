@@ -19,12 +19,15 @@ These are some phases that I will go under(they may be changed because I am not 
 
 ## What have I done so far?
 
-I am currently on **phase 1**.
+I am currently on **phase 3**.
 
 Checklist:
 
 - [x] Read Page
 - [x] Write Page
 - [x] Page Cache
-- [ ] File Growth
+- [x] File Growth
 - [x] Page Flush
+- [x] BTree insert
+- [x] BTree lookup
+- [ ] BTree split <- This is implemented somehow but completed, some edge cases are missing for now.
