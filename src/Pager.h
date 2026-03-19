@@ -5,6 +5,7 @@
 #include <map>
 #include <vector>
 #include <memory>
+#include <cstdint>
 
 
 const uint32_t PAGE_SIZE = 4096;

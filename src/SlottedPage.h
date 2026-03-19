@@ -4,6 +4,7 @@
 #include <cstring>
 #include <vector>
 #include <optional>
+#include <utility>
 #include "Pager.h"
 
 
@@ -25,11 +26,13 @@ struct PageHeader{
 
 struct Cell{
     uint32_t key;
+    uint32_t row_id;
     uint16_t value_size;
 };
 
 struct InternalNodeCell {
     uint32_t key;
+    uint32_t row_id;
     uint32_t page_id;
 };
 
@@ -45,16 +48,25 @@ class SlottedPage{
     
         inline PageHeader* header() { return reinterpret_cast<PageHeader*>(data); }
         inline uint16_t* get_cell_pointers() { return reinterpret_cast<uint16_t*>(data + sizeof(PageHeader)); }
+        inline int compare_keys(uint32_t key1, uint32_t row_1, uint32_t key2, uint32_t row_2) {
+            if (key1 < key2) return -1;
+            if (key1 > key2) return 1;
+            if (row_1 < row_2) return -1;
+            if (row_1 > row_2) return 1;
+            return 0;
+        }
         SlottedPage(char* page_data);
-        bool insert_record(uint32_t key, const void* data, uint16_t data_size);
-        bool insert_internal_cell(uint32_t key, uint32_t page_id);
+        bool insert_record(uint32_t key, uint32_t row_id, const void* data, uint16_t data_size);
+        bool insert_internal_cell(uint32_t key, uint32_t row_id, uint32_t page_id);
         void init_as_leaf_node(bool is_root);
-        uint32_t get_first_key();
+        std::pair<uint32_t, uint32_t> get_first_key_and_row_id();
         void init_as_internal_node(bool is_root);
 
-        uint32_t lookup_internal(uint32_t target_key);
+        uint32_t lookup_internal(uint32_t target_key, uint32_t target_row_id);
 
-        std::optional<std::vector<char>> get_record(uint32_t key);
+        std::optional<std::vector<char>> get_record(uint32_t key, uint32_t row_id);
 
         uint32_t move_half(SlottedPage* dst);
+        void recalculate_space();
+        void compact();
 };

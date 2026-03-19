@@ -22,11 +22,11 @@ We now reserve space at the end and write a pointer at the beginning. Then we in
 Then we copy key, value size and value.
 And at the end we update the header.
 */
-bool SlottedPage::insert_record(uint32_t key, const void *record_data, uint16_t data_size)
+bool SlottedPage::insert_record(uint32_t key, uint32_t row_id, const void *record_data, uint16_t data_size)
 {
     PageHeader* h = header();
 
-    uint16_t size_needed = sizeof(uint32_t) + sizeof(uint16_t) + data_size;
+    uint16_t size_needed = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint16_t) + data_size;
 
     uint16_t total_space_needed = size_needed + sizeof(uint16_t);
 
@@ -44,16 +44,17 @@ bool SlottedPage::insert_record(uint32_t key, const void *record_data, uint16_t 
     
     int insert_index = 0;
 
-    for(int i = 0;i < h->num_cells;i++){
-        uint32_t cell_key;
-        char* cell_ptr = data + pointers[i];
-        std::memcpy(&cell_key, cell_ptr, sizeof(uint32_t));
+    for(;insert_index <h->num_cells;insert_index++){
+        uint16_t offset = pointers[insert_index];
+        uint32_t existing_key;
+        uint32_t existing_row_id;
 
-        if(cell_key > key){
-            insert_index = i;
+        std::memcpy(&existing_key, data + offset, sizeof(uint32_t));
+        std::memcpy(&existing_row_id, data + offset + sizeof(uint32_t), sizeof(uint32_t));
+
+        if (compare_keys(key, row_id, existing_key, existing_row_id) < 0) {
             break;
         }
-        insert_index = i+1;
     }
 
     if(insert_index < h->num_cells){
@@ -71,6 +72,9 @@ bool SlottedPage::insert_record(uint32_t key, const void *record_data, uint16_t 
     std::memcpy(cell_ptr, &key, sizeof(uint32_t));
     cell_ptr += sizeof(uint32_t);
 
+    std::memcpy(cell_ptr, &row_id, sizeof(uint32_t));
+    cell_ptr += sizeof(uint32_t);
+
     std::memcpy(cell_ptr, &data_size, sizeof(uint16_t));
     cell_ptr += sizeof(uint16_t);
 
@@ -83,7 +87,7 @@ bool SlottedPage::insert_record(uint32_t key, const void *record_data, uint16_t 
 
 }
 
-bool SlottedPage::insert_internal_cell(uint32_t key, uint32_t page_id){
+bool SlottedPage::insert_internal_cell(uint32_t key, uint32_t row_id, uint32_t page_id){
     PageHeader* h = header();
 
     uint16_t cell_size = sizeof(InternalNodeCell);
@@ -98,9 +102,27 @@ bool SlottedPage::insert_internal_cell(uint32_t key, uint32_t page_id){
 
     uint16_t* pointers = get_cell_pointers();
 
-    pointers[h->num_cells] = offset;
+    int insert_index = 0;
+    for(int i = 0; i<h->num_cells;i++){
+        InternalNodeCell* existingcell = reinterpret_cast<InternalNodeCell*>(data + pointers[i]);
+        if(compare_keys(key, row_id, existingcell->key, existingcell->row_id) < 0){
+            insert_index = i;
+            break;
+        }
+        insert_index = i+1;
+    }
 
-    InternalNodeCell cell = {key, page_id};
+    if(insert_index < h->num_cells){
+        std::memmove(
+            &pointers[insert_index+1],
+            &pointers[insert_index],
+            (h->num_cells - insert_index) * sizeof(uint16_t)
+        );
+    }
+
+    pointers[insert_index] = offset;
+
+    InternalNodeCell cell = {key, row_id, page_id};
     std::memcpy(data+offset, &cell, sizeof(InternalNodeCell));
     h->num_cells++;
     h->free_start += sizeof(uint16_t);
@@ -110,7 +132,7 @@ bool SlottedPage::insert_internal_cell(uint32_t key, uint32_t page_id){
 
 // SlottedPage.cpp
 
-uint32_t SlottedPage::lookup_internal(uint32_t key)
+uint32_t SlottedPage::lookup_internal(uint32_t key, uint32_t row_id)
 {
     PageHeader* h = header();
     uint16_t* pointers = get_cell_pointers();
@@ -133,7 +155,7 @@ uint32_t SlottedPage::lookup_internal(uint32_t key)
         in our case its Ptr1. If we go through every key and dont find the needed key we return the right child page id
         and then we can do lookup from there.
         */
-        if (key < cell->key) {
+        if (compare_keys(key, row_id, cell->key, cell->row_id) < 0) {
             return cell->page_id;
         }
     }
@@ -141,7 +163,7 @@ uint32_t SlottedPage::lookup_internal(uint32_t key)
     return h->right_child_page_id;
 }
 
-std::optional<std::vector<char>> SlottedPage::get_record(uint32_t key)
+std::optional<std::vector<char>> SlottedPage::get_record(uint32_t key, uint32_t row_id)
 {
     PageHeader* h = header();
     uint16_t* pointers = get_cell_pointers();
@@ -156,8 +178,11 @@ std::optional<std::vector<char>> SlottedPage::get_record(uint32_t key)
 
         if(cell_key == key){
             cell_ptr += sizeof(uint32_t);
+            uint32_t cell_row_id;
             uint16_t data_size;
 
+            std::memcpy(&cell_row_id, cell_ptr, sizeof(uint32_t));
+            cell_ptr += sizeof(uint32_t);
             std::memcpy(&data_size, cell_ptr, sizeof(uint16_t));
 
             cell_ptr += sizeof(uint16_t);
@@ -189,24 +214,117 @@ uint32_t SlottedPage::move_half(SlottedPage *dst)
         uint32_t key;
         std::memcpy(&key, cell_ptr, sizeof(uint32_t));
 
-        uint16_t data_len;
-        std::memcpy(&data_len, cell_ptr+sizeof(uint32_t), sizeof(uint16_t));
+        uint32_t row_id;
+        std::memcpy(&row_id, cell_ptr + sizeof(uint32_t), sizeof(uint32_t));
 
-        char* record_data = cell_ptr + sizeof(uint32_t) + sizeof(uint16_t);
+        uint16_t data_len;
+        std::memcpy(&data_len, cell_ptr+sizeof(uint32_t) + sizeof(uint32_t), sizeof(uint16_t));
+
+        char* record_data = cell_ptr + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint16_t);
         
         if(is_first){
             separator_key = key;
             is_first = false;
         }
 
-        dst->insert_record(key, record_data, data_len);
+        dst->insert_record(key, row_id, record_data, data_len);
     }
 
     h->num_cells = split_cells;
 
     h->free_start = sizeof(PageHeader) + (split_cells * sizeof(uint16_t));
 
+    recalculate_space();
+
     return separator_key;
+}
+
+void SlottedPage::recalculate_space()
+{
+    PageHeader* h = header();
+    uint16_t* pointers = get_cell_pointers();
+    if(h->num_cells == 0){
+        h->free_end = PAGE_SIZE;
+        return;
+    }
+
+    // shifting the offset to the right, so we can insert new record at the end of the page
+    uint16_t min_offset = PAGE_SIZE;
+    for(int i = 0;i<h->num_cells;i++){
+        if(pointers[i] < min_offset){
+            min_offset = pointers[i];
+        }
+    }
+
+    h->free_end = min_offset;
+}
+
+void SlottedPage::compact()
+{
+    PageHeader* h = header();
+    uint16_t* pointers = get_cell_pointers();
+
+    if (h->num_cells == 0) {
+        h->free_end = PAGE_SIZE;
+        return;
+    }
+
+    struct CellData {
+        uint32_t key;
+        uint32_t row_id;
+        uint16_t data_size;
+        std::vector<char> record_data;
+    };
+
+    std::vector<CellData> cells;
+    cells.reserve(h->num_cells);
+
+    for (int i = 0; i < h->num_cells; i++) {
+        uint16_t offset = pointers[i];
+        char* cell_ptr = data + offset;
+
+        CellData cell;
+        std::memcpy(&cell.key, cell_ptr, sizeof(uint32_t));
+        cell_ptr += sizeof(uint32_t);
+
+        std::memcpy(&cell.row_id, cell_ptr, sizeof(uint32_t));
+        cell_ptr += sizeof(uint32_t);
+
+        std::memcpy(&cell.data_size, cell_ptr, sizeof(uint16_t));
+        cell_ptr += sizeof(uint16_t);
+
+        cell.record_data.resize(cell.data_size);
+        std::memcpy(cell.record_data.data(), cell_ptr, cell.data_size);
+
+        cells.push_back(std::move(cell));
+    }
+
+    uint16_t write_offset = PAGE_SIZE;
+
+    for (int i = 0; i < (int)cells.size(); i++) {
+        const CellData& cell = cells[i];
+
+        uint16_t cell_size = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint16_t) + cell.data_size;
+
+        write_offset -= cell_size;
+
+        char* cell_ptr = data + write_offset;
+
+        std::memcpy(cell_ptr, &cell.key, sizeof(uint32_t));
+        cell_ptr += sizeof(uint32_t);
+
+        std::memcpy(cell_ptr, &cell.row_id, sizeof(uint32_t));
+        cell_ptr += sizeof(uint32_t);
+
+        std::memcpy(cell_ptr, &cell.data_size, sizeof(uint16_t));
+        cell_ptr += sizeof(uint16_t);
+
+        std::memcpy(cell_ptr, cell.record_data.data(), cell.data_size);
+
+        pointers[i] = write_offset;
+    }
+
+    h->free_end = write_offset;
 }
 
 void SlottedPage::init_as_leaf_node(bool is_root) {
@@ -215,19 +333,33 @@ void SlottedPage::init_as_leaf_node(bool is_root) {
     h->is_root = is_root ? 1 : 0;
     h->num_cells = 0;
     h->parent_page_id = 0;
+    h->right_child_page_id = 0;
     h->free_start = sizeof(PageHeader);
     h->free_end = PAGE_SIZE;
 }
 
-uint32_t SlottedPage::get_first_key() {
+void SlottedPage::init_as_internal_node(bool is_root) {
     PageHeader* h = header();
-    if (h->num_cells == 0) return 0;
+    h->node_type = INTERNAL;
+    h->is_root = is_root ? 1 : 0;
+    h->num_cells = 0;
+    h->parent_page_id = 0;
+    h->right_child_page_id = 0;
+    h->free_start = sizeof(PageHeader);
+    h->free_end = PAGE_SIZE;
+}
+
+std::pair<uint32_t, uint32_t> SlottedPage::get_first_key_and_row_id() {
+    PageHeader* h = header();
+    if (h->num_cells == 0) return {0, 0};
 
     uint16_t* pointers = get_cell_pointers();
     uint16_t first_offset = pointers[0];
 
     uint32_t key;
+    uint32_t row_id;
     std::memcpy(&key, data + first_offset, sizeof(uint32_t));
-    
-    return key;
+    std::memcpy(&row_id, data + first_offset + sizeof(uint32_t), sizeof(uint32_t));
+
+    return {key, row_id};
 }

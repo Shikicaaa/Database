@@ -1,4 +1,5 @@
 #include "Pager.h"
+#include <cstring>
 
 Pager::Pager(const std::string &fileName, const char* name){
     this->fileName = fileName;
