@@ -274,7 +274,7 @@ std::optional<std::vector<char>> BTree::find(uint32_t key, uint32_t row_id)
     Page* page = pager.get_page(leaf_node_id);
     SlottedPage sp(page->data);
 
-    std::optional<std::vector<char>> result = sp.get_record(key, row_id);
+    std::optional<std::vector<char>> result = sp.get_record(key, row_id, pager);
 
     if(result.has_value()){
         std::cout << "BTREE: Found record in node " << leaf_node_id << std::endl;

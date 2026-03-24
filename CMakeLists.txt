@@ -35,6 +35,10 @@ add_executable (
   "src/SlottedPage.h"
   "src/BTree.h"
   "src/BTree.cpp"
+  "src/Table.h"
+  "src/Table.cpp"
+  "src/Serializer.h"
+  "src/Serializer.cpp"
 )
 
 
