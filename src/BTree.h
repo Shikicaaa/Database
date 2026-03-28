@@ -17,4 +17,6 @@ public:
 
     bool insert(uint32_t key, uint32_t row_id, const void* data, uint16_t size);
     std::optional<std::vector<char>> find(uint32_t key, uint32_t row_id);
+    bool update(uint32_t key, uint32_t row_id, const void* data, uint16_t size);
+    bool remove(uint32_t key, uint32_t row_id);
 };

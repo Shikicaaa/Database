@@ -18,3 +18,9 @@ This will require the following thing?:
 * Verision the schema
 * Iterator for columns
 * Support migrations
+
+26.3
+Note for later, implement full range scan for non index search, optimize it later with indexing. Implement freelist or linked list free list to manage space.
+
+28.3
+Implement merge pages on BTree level.

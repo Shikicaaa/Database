@@ -21,6 +21,8 @@ class Table {
 
         bool insert_row(const Row& row);
         std::optional<Row> find_row(uint32_t primary_key);
+        bool update_row(uint32_t primary_key, const Row& row);
+        bool remove_row(uint32_t primary_key);
 
 
     private:

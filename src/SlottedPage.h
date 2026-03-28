@@ -38,10 +38,12 @@ struct PageHeader{
 };
 #pragma pack(pop)
 
-// [key (4B)][row_id (4B)][flags (1B)][data_size (2B)][data]  = 11B + data
+// [key (4B)][row_id (4B)][flags (1B)][data_size (2B)][overflow_page_id (4B)][data]  = 11B + data
 //
 // flags & CELL_FLAG_OVERFLOW:
 //   data = [overflow_page_id (4B)]
+
+
 #pragma pack(push, 1)
 struct LeafCellHeader {
     uint32_t key;
@@ -51,7 +53,7 @@ struct LeafCellHeader {
 };
 #pragma pack(pop)
 
-const uint16_t LEAF_CELL_HEADER_SIZE = sizeof(LeafCellHeader);  // 11 bajtova
+const uint16_t LEAF_CELL_HEADER_SIZE = sizeof(LeafCellHeader);  // 11 bytes
 
 struct InternalNodeCell {
     uint32_t key;

@@ -196,6 +196,78 @@ bool SlottedPage::update_record(uint32_t key, uint32_t row_id, const void *new_d
         std::memcpy(data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t), &overflow_data_size, sizeof(uint16_t));
         std::memcpy(data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t) + sizeof(uint16_t), &new_overflow_page_id, sizeof(uint32_t));
     }
+    return true;
+}
+
+bool SlottedPage::delete_record(uint32_t key, uint32_t row_id, Pager &pager)
+{
+    PageHeader* h = header();
+    uint16_t* pointers = get_cell_pointers();
+    
+    int cell_index = 0;
+
+    uint32_t cell_key;
+    uint32_t cell_row_id;
+    uint8_t flags;
+    uint16_t data_size;
+
+    bool found = false;
+
+    while(cell_index < h->num_cells){
+        uint16_t offset = pointers[cell_index];
+        char* cell_ptr = data + offset;
+
+        std::memcpy(&cell_key, cell_ptr, sizeof(uint32_t));
+        cell_ptr += sizeof(uint32_t);
+
+        std::memcpy(&cell_row_id, cell_ptr, sizeof(uint32_t));
+        cell_ptr += sizeof(uint32_t);
+
+        std::memcpy(&flags, cell_ptr, sizeof(uint8_t));
+        cell_ptr += sizeof(uint8_t);
+
+        std::memcpy(&data_size, cell_ptr, sizeof(uint16_t));
+        cell_ptr += sizeof(uint16_t);
+
+        if(cell_key == key && cell_row_id == row_id){
+            found = true;
+            break;
+        }
+        cell_index++;
+    }
+    if(!found) return false;
+
+    if(flags == CELL_FLAG_OVERFLOW){
+        uint16_t offset = pointers[cell_index];
+        uint32_t overflow_page_id;
+        std::memcpy(&overflow_page_id, data+offset+LEAF_CELL_HEADER_SIZE, sizeof(uint32_t));
+
+        free_overflow_pages(overflow_page_id,pager);
+    }
+
+    uint16_t record_size = sizeof(uint32_t)*2 + sizeof(uint8_t) + sizeof(uint16_t); // 11 bajtova zaglavlja
+    
+    if (flags == CELL_FLAG_OVERFLOW) {
+        record_size += sizeof(uint32_t);
+    } else {
+        record_size += data_size;
+    }
+    uint16_t deleted_offset = pointers[cell_index];
+    uint16_t to_move = deleted_offset - h->free_end;
+    std::memmove(data+h->free_end + record_size, data+h->free_end, to_move);
+    
+    //rearrange the pointers now
+    for(int i = 0;i < h->num_cells;i++){
+        if(pointers[i] < deleted_offset){
+            pointers[i] += record_size;
+        }
+    }
+
+
+    std::memmove(&pointers[cell_index], &pointers[cell_index+1], (h->num_cells - cell_index - 1) * sizeof(uint16_t));
+    h->num_cells--;
+    h->free_start -= sizeof(uint16_t);
+    h->free_end += record_size;
 
     return true;
 }
@@ -255,6 +327,25 @@ std::vector<char> SlottedPage::read_from_overflow(uint32_t overflow_page_id, Pag
     }
 
     return result;
+}
+
+void SlottedPage::free_overflow_pages(uint32_t first_overflow_page_id, Pager &pager)
+{
+    uint32_t current_page = first_overflow_page_id;
+
+    while(current_page != 0){
+        Page* page = pager.get_page(current_page);
+        OverflowPageHeader* overflow_header = (OverflowPageHeader*)page->data;
+
+        uint32_t next_page = overflow_header->next_page_id;
+
+        overflow_header->total_data_size = 0;
+        overflow_header->chunk_size = 0;
+        overflow_header->next_page_id = 0;
+        page->is_dirty = true;
+
+        current_page = next_page;
+    }
 }
 
 uint32_t SlottedPage::lookup_internal(uint32_t key, uint32_t row_id)

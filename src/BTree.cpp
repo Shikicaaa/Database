@@ -285,3 +285,27 @@ std::optional<std::vector<char>> BTree::find(uint32_t key, uint32_t row_id)
     return result;
 }
 
+bool BTree::update(uint32_t key, uint32_t row_id, const void *data, uint16_t size)
+{
+    uint32_t leaf_id = find_leaf_node(key, row_id);
+    Page* page = pager.get_page(leaf_id);
+    SlottedPage sp(page->data);
+    if(sp.update_record(key, row_id, data, size, pager)){
+        page->is_dirty = true;
+        return true;
+    }
+    return false;
+}
+
+bool BTree::remove(uint32_t key, uint32_t row_id)
+{
+    uint32_t leaf_id = find_leaf_node(key,row_id);
+    Page* page = pager.get_page(leaf_id);
+
+    SlottedPage sp(page->data);
+    if(sp.delete_record(key,row_id, pager)){
+        page->is_dirty = true;
+        return true;
+    }
+    return false;
+}
