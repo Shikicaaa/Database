@@ -10,6 +10,22 @@ bool Table::insert_row(const Row &row)
 
     uint32_t primary_key = extract_primary_key(row);
 
+    for (size_t i = 0; i < columns.size(); i++) {
+        if (columns[i].is_primary_key || columns[i].is_unique) {
+            // TODO: Ovo mora da se kasnije promeni, nije dovoljno da se samo proveri primary, vec i ostali,
+            // + mora da se ubaci za unique kolone, a ne samo primary, odnosno da imamo btree index i za unique kolone
+            // trenutno je ovo samo da bi se testirao unique constraint, ali kasnije ce biti bitno i za ostale kolone koje nisu primary key
+            
+            if (columns[i].is_primary_key) {
+                if (find_row(primary_key).has_value()) {
+                    std::cerr << "ERROR: Duplicate value for PRIMARY KEY/UNIQUE column '" 
+                              << columns[i].name << "' with value " << primary_key << std::endl;
+                    return false;
+                }
+            }
+        }
+    }
+
     std::vector<uint8_t> serialized_data = serializer.serialize(columns, row);
 
     return btree.insert(primary_key, 0, serialized_data.data(), serialized_data.size());
@@ -47,7 +63,11 @@ bool Table::update_row(uint32_t primary_key, const Row &row)
 
 bool Table::remove_row(uint32_t primary_key)
 {
-    return btree.remove(primary_key, 0);
+    if(!btree.remove(primary_key, 0)){
+        std::cerr << "ERROR: Deletion not successfull, key not found";
+        return false;
+    }
+    return true;
 }
 
 uint32_t Table::extract_primary_key(const Row &row)

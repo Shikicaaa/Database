@@ -24,3 +24,6 @@ Note for later, implement full range scan for non index search, optimize it late
 
 28.3
 Implement merge pages on BTree level.
+
+1.4
+Unique index check + secondary index checking. Further implementations require implementing SQL parser.

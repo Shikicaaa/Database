@@ -178,3 +178,74 @@ Row Serializer::deserialize(
 
     return row;
 }
+
+std::vector<uint8_t> Serializer::serialize_schema(const std::vector<ColumnDefinition>& schema) {
+    std::vector<uint8_t> buffer;
+    
+    // Number of columns (2 bytes)
+    uint16_t num_cols = static_cast<uint16_t>(schema.size());
+    buffer.push_back((num_cols >> 8) & 0xFF);
+    buffer.push_back(num_cols & 0xFF);
+    
+    for (const auto& col : schema) {
+        // Name length (1 byte) + name
+        uint8_t name_len = static_cast<uint8_t>(col.name.size());
+        buffer.push_back(name_len);
+        buffer.insert(buffer.end(), col.name.begin(), col.name.end());
+        
+        // Type (1 byte)
+        buffer.push_back(static_cast<uint8_t>(col.type));
+        
+        // Flags (1 byte): is_pk | (is_nullable << 1) | (is_unique << 2)
+        uint8_t flags = (col.is_primary_key ? 1 : 0) |
+                        (col.is_nullable ? 2 : 0) |
+                        (col.is_unique ? 4 : 0);
+        buffer.push_back(flags);
+        
+        // Max length (2 bytes)
+        buffer.push_back((col.max_length >> 8) & 0xFF);
+        buffer.push_back(col.max_length & 0xFF);
+    }
+    
+    return buffer;
+}
+
+std::vector<ColumnDefinition> Serializer::deserialize_schema(const uint8_t* data, uint16_t size) {
+    std::vector<ColumnDefinition> schema;
+    const uint8_t* ptr = data;
+    const uint8_t* end = data + size;
+    
+    if (ptr + 2 > end) return schema;
+    
+    uint16_t num_cols = (static_cast<uint16_t>(ptr[0]) << 8) | ptr[1];
+    ptr += 2;
+    
+    for (uint16_t i = 0; i < num_cols; i++) {
+        if (ptr + 1 > end) return schema;
+        
+        // Name
+        uint8_t name_len = *ptr++;
+        if (ptr + name_len > end) return schema;
+        std::string name(reinterpret_cast<const char*>(ptr), name_len);
+        ptr += name_len;
+        
+        if (ptr + 4 > end) return schema;
+        
+        // Type
+        DataType type = static_cast<DataType>(*ptr++);
+        
+        // Flags
+        uint8_t flags = *ptr++;
+        bool is_pk = (flags & 1) != 0;
+        bool is_nullable = (flags & 2) != 0;
+        bool is_unique = (flags & 4) != 0;
+        
+        // Max length
+        uint16_t max_len = (static_cast<uint16_t>(ptr[0]) << 8) | ptr[1];
+        ptr += 2;
+        
+        schema.push_back({name, type, is_pk, is_nullable, is_unique, max_len});
+    }
+    
+    return schema;
+}

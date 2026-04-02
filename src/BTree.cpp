@@ -131,7 +131,11 @@ void BTree::insert_into_parent(Page* old_node, uint32_t old_node_id, uint32_t ke
         new_child_sp.header()->parent_page_id = new_root_id;
 
         this->root_page_id = new_root_id;
-        pager.set_root_page_id(new_root_id);
+        if (use_catalog_root) {
+            pager.set_catalog_root_page_id(new_root_id);
+        } else {
+            pager.set_root_page_id(new_root_id);
+        }
 
         old_node->is_dirty = true;
         new_root_page->is_dirty = true;
@@ -217,7 +221,7 @@ uint32_t BTree::find_leaf_node(uint32_t leaf_key, uint32_t row_id)
     }
 }
 
-BTree::BTree(Pager &p) : pager(p)
+BTree::BTree(Pager &p) : pager(p), use_catalog_root(false)
 {
     this->root_page_id = p.get_root_page_id();
 
@@ -233,6 +237,11 @@ BTree::BTree(Pager &p) : pager(p)
         SlottedPage sp(page->data);
         sp.init_as_leaf_node(true);
     }
+}
+
+BTree::BTree(Pager& p, uint32_t explicit_root_page_id, bool is_catalog)
+    : pager(p), root_page_id(explicit_root_page_id), use_catalog_root(is_catalog)
+{
 }
 
 bool BTree::insert(uint32_t key, uint32_t row_id, const void *data, uint16_t size)
@@ -287,13 +296,24 @@ std::optional<std::vector<char>> BTree::find(uint32_t key, uint32_t row_id)
 
 bool BTree::update(uint32_t key, uint32_t row_id, const void *data, uint16_t size)
 {
-    uint32_t leaf_id = find_leaf_node(key, row_id);
-    Page* page = pager.get_page(leaf_id);
-    SlottedPage sp(page->data);
-    if(sp.update_record(key, row_id, data, size, pager)){
-        page->is_dirty = true;
+    std::optional<std::vector<char>> old_record = find(key, row_id);
+    if (!old_record.has_value()) {
+        return false;
+    }
+
+    if (!remove(key, row_id)) {
+        return false;
+    }
+
+    if (insert(key, row_id, data, size)) {
         return true;
     }
+
+    const std::vector<char>& old_data = old_record.value();
+    if (!insert(key, row_id, old_data.data(), static_cast<uint16_t>(old_data.size()))) {
+        std::cerr << "ERROR: Update failed and rollback insert failed for key " << key << " row_id " << row_id << "\n";
+    }
+
     return false;
 }
 

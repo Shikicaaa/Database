@@ -176,26 +176,41 @@ bool SlottedPage::update_record(uint32_t key, uint32_t row_id, const void *new_d
         return false;
     }
 
-    if(flags == CELL_FLAG_OVERFLOW){
-        uint32_t overflow_page_id;
-        std::memcpy(&overflow_page_id, data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t) + sizeof(uint16_t), sizeof(uint32_t));
-        SlottedPage::free_overflow_pages(overflow_page_id, pager);
+    const uint16_t cell_offset = pointers[cell_index];
+    const uint16_t payload_offset = cell_offset + LEAF_CELL_HEADER_SIZE;
+
+    uint32_t old_overflow_page_id = 0;
+    if (flags == CELL_FLAG_OVERFLOW) {
+        std::memcpy(&old_overflow_page_id, data + payload_offset, sizeof(uint32_t));
     }
 
-    if(new_size <= data_size){
-        std::memcpy(data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t) + sizeof(uint16_t), new_data, new_size);
-        uint8_t flags = CELL_FLAG_NORMAL;
-        std::memcpy(data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t), &flags, sizeof(uint8_t));
+    // Fast path overwrite in place when current cell stores inline payload and new payload fits.
+    if (flags == CELL_FLAG_NORMAL && new_size <= data_size) {
+        std::memcpy(data + payload_offset, new_data, new_size);
+
+        uint8_t new_flags = CELL_FLAG_NORMAL;
+        std::memcpy(data + cell_offset + sizeof(uint32_t) + sizeof(uint32_t), &new_flags, sizeof(uint8_t));
+
         uint16_t new_data_size = new_size;
-        std::memcpy(data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t), &new_data_size, sizeof(uint16_t));
-    } else {
-        uint32_t new_overflow_page_id = SlottedPage::write_to_overflow(new_data, new_size, pager);
-        uint8_t flags = CELL_FLAG_OVERFLOW;
-        std::memcpy(data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t), &flags, sizeof(uint8_t));
-        uint16_t overflow_data_size = sizeof(uint32_t);
-        std::memcpy(data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t), &overflow_data_size, sizeof(uint16_t));
-        std::memcpy(data + pointers[cell_index] + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t) + sizeof(uint16_t), &new_overflow_page_id, sizeof(uint32_t));
+        std::memcpy(data + cell_offset + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t), &new_data_size, sizeof(uint16_t));
+        return true;
     }
+
+    // Fallback is to write the updated payload to overflow and atomically repoint this cell.
+    uint32_t new_overflow_page_id = SlottedPage::write_to_overflow(new_data, new_size, pager);
+
+    uint8_t new_flags = CELL_FLAG_OVERFLOW;
+    std::memcpy(data + cell_offset + sizeof(uint32_t) + sizeof(uint32_t), &new_flags, sizeof(uint8_t));
+
+    uint16_t overflow_data_size = sizeof(uint32_t);
+    std::memcpy(data + cell_offset + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t), &overflow_data_size, sizeof(uint16_t));
+
+    std::memcpy(data + payload_offset, &new_overflow_page_id, sizeof(uint32_t));
+
+    if (flags == CELL_FLAG_OVERFLOW && old_overflow_page_id != 0) {
+        SlottedPage::free_overflow_pages(old_overflow_page_id, pager);
+    }
+
     return true;
 }
 

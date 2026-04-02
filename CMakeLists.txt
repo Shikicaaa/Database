@@ -39,6 +39,8 @@ add_executable (
   "src/Table.cpp"
   "src/Serializer.h"
   "src/Serializer.cpp"
+  "src/Catalog.h"
+  "src/Catalog.cpp"
 )
 
 
