@@ -41,6 +41,12 @@ add_executable (
   "src/Serializer.cpp"
   "src/Catalog.h"
   "src/Catalog.cpp"
+  "src/Parser/Parser.h"
+  "src/Parser/Parser.cpp"
+  "src/Parser/Lexer.h"
+  "src/Parser/Lexer.cpp"
+  "src/Executor.h"
+  "src/Executor.cpp"
 )
 
 

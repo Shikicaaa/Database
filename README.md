@@ -14,12 +14,12 @@ These are some phases that I will go under(they may be changed because I am not 
 3. B Tree - Algorithm that connects pages into a tree and makes our search faster. Probably will implement between 3 and 4 some indexing strategies.
 4. Cursor / Table - This is an apstraction of B tree, it will just mask how B tree works
 5. Compiler / Interpreter - This will interpret our SQL.
-
+6. Query Planner + Joins
 ---
 
 ## What have I done so far?
 
-I am currently on **phase 4**.
+I am currently on **phase 6**.
 
 Checklist:
 
@@ -31,5 +31,7 @@ Checklist:
 - [x] BTree insert
 - [x] BTree lookup
 - [x] BTree split
-- [ ] Table class and schema
-- [ ] Schema serializer
+- [x] Table class and schema
+- [x] Schema serializer
+- [ ] Implement query planner
+- [ ] Implement joins (left, outer, inner, right)

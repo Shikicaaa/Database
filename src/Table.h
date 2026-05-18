@@ -24,7 +24,7 @@ class Table {
         bool update_row(uint32_t primary_key, const Row& row);
         bool remove_row(uint32_t primary_key);
 
-
-    private:
         uint32_t extract_primary_key(const Row& row);
+        const std::vector<ColumnDefinition>& get_columns() const;
+        std::vector<Row> scan_all();
 };
