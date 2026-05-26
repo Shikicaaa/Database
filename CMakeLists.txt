@@ -47,6 +47,8 @@ add_executable (
   "src/Parser/Lexer.cpp"
   "src/Executor.h"
   "src/Executor.cpp"
+  "src/PageCache.h"
+  "src/PageCache.cpp"
 )
 
 

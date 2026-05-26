@@ -1,4 +1,5 @@
 #include "PageCache.h"
+#include "Pager.h"
 
 Page* PageCache::find_page(uint32_t page_id) {
     std::lock_guard<std::mutex> lock(cache_mutex);

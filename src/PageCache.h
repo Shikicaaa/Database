@@ -8,7 +8,8 @@
 #include <memory>
 #include <cstring>
 #include <mutex>
-#include "Pager.h"
+
+struct Page;
 
 const uint32_t CACHE_SIZE = 128;
 
