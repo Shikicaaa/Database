@@ -58,45 +58,42 @@ Pager::Pager(const std::string &fileName, const char* name){
             file.flush();
         }
     }
+
+    page_cache.on_evict = [this](uint32_t id, const char* data) {
+        file.seekp(id * PAGE_SIZE);
+        file.write(data, PAGE_SIZE);
+        file.flush();
+        std::cout << "[CACHE] Evicted dirty page " << id << " to disk." << std::endl;
+    };
 }
 
 Pager::~Pager()
 {
-    for(auto const& [id,page_ptr] : page_cache){
-        flush(id);
-    }
+    page_cache.shutdown();
     file.close();
 }
 
 Page* Pager::get_page(uint32_t pageID){
-    if(page_cache.find(pageID) != page_cache.end()){
-        return page_cache[pageID].get();
-    }
+    Page* cached_page = page_cache.find_page(pageID);
+    if(cached_page) return cached_page;
 
-    auto new_page = std::make_unique<Page>();
-
-    int offset = pageID * PAGE_SIZE;
-    file.seekg(offset);
-    file.read(new_page->data, PAGE_SIZE);
-
+    char page_data[PAGE_SIZE];
+    file.seekg(pageID * PAGE_SIZE);
+    file.read(page_data, PAGE_SIZE);
     if(!file){
+        std::cerr << "Error reading page " << pageID << " from disk." << std::endl;
         file.clear();
+        return nullptr;
     }
-
-    Page* raw_page = new_page.get();
-
-    page_cache[pageID] = std::move(new_page);
-
-    return raw_page;
+    return page_cache.insert_page(pageID, page_data);
 }
 
 void Pager::flush(uint32_t pageID)
 {
-    auto it = page_cache.find(pageID);
+    Page* it = page_cache.find_page(pageID);
 
-    if (it != page_cache.end()) {
-        Page* page = it->second.get();
-        
+    if (it != nullptr) {
+        Page* page = it;
         if (page->is_dirty) {
             file.seekp(pageID * PAGE_SIZE);
             file.write(page->data, PAGE_SIZE);
@@ -128,6 +125,8 @@ uint32_t Pager::allocate_new_page()
         char empty_page[PAGE_SIZE] = {0};
         file.seekp(allocated_page_id * PAGE_SIZE);
         file.write(empty_page, PAGE_SIZE);
+        Page* new_page = page_cache.insert_page(allocated_page_id, empty_page);
+        new_page->is_dirty = true;
     }
 
     file.seekp(0);

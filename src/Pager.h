@@ -2,10 +2,10 @@
 
 #include <iostream>
 #include <fstream>
-#include <map>
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include "PageCache.h"
 
 
 const uint32_t PAGE_SIZE = 4096;
@@ -25,7 +25,10 @@ struct DBHeader{
 
 struct Page{
     char data[PAGE_SIZE];
+    uint32_t page_id = 0;
     bool is_dirty = false;
+    bool reference_bit = 0;
+    uint16_t access_count = 0;
 };
 
 class Pager{
@@ -35,8 +38,7 @@ class Pager{
 
         DBHeader db_header;
 
-        std::map<uint32_t, std::unique_ptr<Page>> page_cache;
-
+        PageCache page_cache;
     public:
         Pager(const std::string& fileName, const char* name);
         ~Pager();
