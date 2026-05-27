@@ -6,6 +6,7 @@
 #include <optional>
 #include "BTree.h"
 #include "Serializer.h"
+#include "Cursor.h"
 
 class Table {
     private:
@@ -27,4 +28,6 @@ class Table {
         uint32_t extract_primary_key(const Row& row);
         const std::vector<ColumnDefinition>& get_columns() const;
         std::vector<Row> scan_all();
+        BTree& get_btree() { return btree; }
+        Serializer get_serializer() { return serializer; }
 };

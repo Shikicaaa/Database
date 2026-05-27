@@ -49,6 +49,15 @@ add_executable (
   "src/Executor.cpp"
   "src/PageCache.h"
   "src/PageCache.cpp"
+  "src/Cursor.cpp"
+  "src/Cursor.h"
+  "src/FilterOperator.h"
+  "src/FilterOperator.cpp"
+  "src/ProjectOperator.h"
+  "src/ProjectOperator.cpp"
+  "src/SeqScanOperator.h"
+  "src/SeqScanOperator.cpp"
+
 )
 
 

@@ -17,6 +17,8 @@ public:
     BTree(Pager& p);
     BTree(Pager& p, uint32_t explicit_root_page_id, bool is_catalog = false);
 
+    uint32_t find_first_leaf_node();
+
     bool insert(uint32_t key, uint32_t row_id, const void* data, uint16_t size);
     std::optional<std::vector<char>> find(uint32_t key, uint32_t row_id);
     bool update(uint32_t key, uint32_t row_id, const void* data, uint16_t size);

@@ -329,3 +329,21 @@ bool BTree::remove(uint32_t key, uint32_t row_id)
     }
     return false;
 }
+
+
+uint32_t BTree::find_first_leaf_node(){
+    uint32_t current_page_id = root_page_id;
+
+    while(true){
+        Page* page = pager.get_page(current_page_id);
+        SlottedPage sp(page->data);
+
+        PageHeader* h = (PageHeader*)page->data;
+        if(h->node_type == LEAF){
+            return current_page_id;
+        }
+        uint16_t page_offset = sp.get_cell_pointers()[0];
+        InternalNodeCell* cell = reinterpret_cast<InternalNodeCell*>(page->data + page_offset);
+        current_page_id = cell->page_id;
+    }
+}

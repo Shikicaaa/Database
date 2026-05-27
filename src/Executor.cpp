@@ -2,6 +2,10 @@
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
+#include "FilterOperator.h"
+#include "ProjectOperator.h"
+#include "SeqScanOperator.h"
+
 
 Executor::Executor(Catalog& catalog) : catalog_(catalog) {}
 
@@ -71,60 +75,25 @@ ExecutionResult Executor::execute_select(const SelectStatement& stmt)
         return {false, "Table '" + stmt.table_name + "' does not exist"};
     }
 
-    const auto& schema = table->get_columns();
+    std::unique_ptr<Operator> plan = std::make_unique<SeqScanOperator>(table);
 
-    std::vector<int> col_indices;
+    plan = std::make_unique<FilterOperator>(std::move(plan), stmt.where_clause);
+    plan = std::make_unique<ProjectOperator>(std::move(plan), stmt.columns);
+
+    std::vector<Row> result_rows;
     std::vector<std::string> result_col_names;
 
-    if (stmt.columns.empty()) {
-        for (int i = 0; i < (int)schema.size(); i++) {
-            col_indices.push_back(i);
-            result_col_names.push_back(schema[i].name);
-        }
-    } else {
-        for (const auto& col_name : stmt.columns) {
-            int idx = find_column_index(col_name, schema);
-            if (idx == -1) {
-                return {false, "Column '" + col_name + "' does not exist in table '" + stmt.table_name + "'"};
-            }
-            col_indices.push_back(idx);
-            result_col_names.push_back(col_name);
-        }
+    plan->Init();
+
+    for(const auto& col : plan->GetOutputSchema()){
+        result_col_names.push_back(col.name);
     }
 
-    std::optional<uint32_t> pk_val = try_extract_pk_from_where(stmt.where_clause, schema);
-    
-    std::vector<Row> matched_rows;
-    
-    // brzi lookup preko pk
-    if (pk_val.has_value()) {
-        auto found = table->find_row(pk_val.value());
-        if (found.has_value() && matches_where(found.value(), schema, stmt.where_clause)) {
-            matched_rows.push_back(found.value());
-        }
-    } else {
-        std::vector<Row> all_rows = table->scan_all();
-        for (const auto& row : all_rows) {
-            if (matches_where(row, schema, stmt.where_clause    )) {
-                matched_rows.push_back(row);
-            }
-        }
+    while(auto row = plan->Next()){
+        result_rows.push_back(*row);
     }
 
-    ExecutionResult result;
-    result.success = true;
-    result.columns = result_col_names;
-    result.message = std::to_string(matched_rows.size()) + " row(s) returned";
-
-    for (const auto& row : matched_rows) {
-        Row projected;
-        for (int idx : col_indices) {
-            projected.push_back(row[idx]);
-        }
-        result.rows.push_back(projected);
-    }
-
-    return result;
+    return {true, std::to_string(result_rows.size()) + " row(s) returned", result_rows, result_col_names};
 }
 
 ExecutionResult Executor::execute_update(const UpdateStatement& stmt)
