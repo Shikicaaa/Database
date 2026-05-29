@@ -57,7 +57,10 @@ add_executable (
   "src/ProjectOperator.cpp"
   "src/SeqScanOperator.h"
   "src/SeqScanOperator.cpp"
-
+  "src/ValuesOperator.h"
+  "src/ValuesOperator.cpp"
+  "src/InsertOperator.h"
+  "src/InsertOperator.cpp"
 )
 
 

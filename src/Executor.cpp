@@ -5,6 +5,8 @@
 #include "FilterOperator.h"
 #include "ProjectOperator.h"
 #include "SeqScanOperator.h"
+#include "ValuesOperator.h"
+#include "InsertOperator.h"
 
 
 Executor::Executor(Catalog& catalog) : catalog_(catalog) {}
@@ -50,22 +52,17 @@ ExecutionResult Executor::execute_insert(const InsertStatement& stmt)
         return {false, "Table '" + stmt.table_name + "' does not exist"};
     }
 
-    const auto& schema = table->get_columns();
+    std::vector<Row> raw_data = {stmt.values};
 
-    if (stmt.values.size() != schema.size()) {
-        return {false,
-            "Column count mismatch: table has " +
-            std::to_string(schema.size()) + " columns, got " +
-            std::to_string(stmt.values.size()) + " values"};
-    }
+    std::unique_ptr<Operator> plan = std::make_unique<ValuesOperator>(raw_data, table->get_columns());
+    std::unique_ptr<Operator> insert_plan = std::make_unique<InsertOperator>(table, std::move(plan));
 
-    Row row(stmt.values.begin(), stmt.values.end());
+    insert_plan->Init();
+    auto result = insert_plan->Next();
 
-    if (!table->insert_row(row)) {
-        return {false, "Insert failed (duplicate key?)"};
-    }
+    int count = std::get<int32_t>(result.value()[0]);
+    return {true, std::to_string(count) + " row(s) inserted"};
 
-    return {true, "1 row inserted"};
 }
 
 ExecutionResult Executor::execute_select(const SelectStatement& stmt)
