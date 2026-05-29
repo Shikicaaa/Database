@@ -8,6 +8,7 @@
 #include "ValuesOperator.h"
 #include "InsertOperator.h"
 #include "DeleteOperator.h"
+#include "UpdateOperator.h"
 
 
 Executor::Executor(Catalog& catalog) : catalog_(catalog) {}
@@ -101,46 +102,13 @@ ExecutionResult Executor::execute_update(const UpdateStatement& stmt)
         return {false, "Table '" + stmt.table_name + "' does not exist"};
     }
 
-    const auto& schema = table->get_columns();
+    std::unique_ptr<Operator> scan = std::make_unique<SeqScanOperator>(table);
+    std::unique_ptr<Operator> filter = std::make_unique<FilterOperator>(std::move(scan), stmt.where_clause);
+    std::unique_ptr<Operator> update_op = std::make_unique<UpdateOperator>(std::move(filter), table, stmt.set_clauses);
 
-    for (const auto& [col_name, _] : stmt.set_clauses) {
-        if (find_column_index(col_name, schema) == -1) {
-            return {false, "Column '" + col_name + "' does not exist"};
-        }
-    }
-
-    std::vector<Row> rows_to_update;
-    std::optional<uint32_t> pk_val = try_extract_pk_from_where(stmt.where_clause, schema);
-
-    if (pk_val.has_value()) {
-        auto found = table->find_row(pk_val.value());
-        if (found.has_value() && matches_where(found.value(), schema, stmt.where_clause)) {
-            rows_to_update.push_back(found.value());
-        }
-    } else {
-        std::vector<Row> all_rows = table->scan_all();
-        for (const auto& row : all_rows) {
-            if (matches_where(row, schema, stmt.where_clause)) {
-                rows_to_update.push_back(row);
-            }
-        }
-    }
-
-    int updated = 0;
-    for (const auto& old_row : rows_to_update) {
-        Row new_row = old_row;
-
-        for (const auto& [col_name, new_val] : stmt.set_clauses) {
-            int idx = find_column_index(col_name, schema);
-            new_row[idx] = new_val;
-        }
-
-        uint32_t pk = table->extract_primary_key(old_row);
-
-        if (table->update_row(pk, new_row)) {
-            updated++;
-        }
-    }
+    update_op->Init();
+    auto result = update_op->Next();
+    int updated = std::get<int32_t>(result.value()[0]);
 
     return {true, std::to_string(updated) + " row(s) updated"};
 }
@@ -172,7 +140,14 @@ std::optional<uint32_t> Executor::try_extract_pk_from_where(
     if (!where.has_value()) return std::nullopt;
     if (where->op != "=")  return std::nullopt;
 
-    int idx = find_column_index(where->column, schema);
+    int idx = -1;
+    for (int i = 0; i < (int)schema.size(); i++) {
+        std::string a = where->column, b = schema[i].name;
+        std::transform(a.begin(), a.end(), a.begin(), ::tolower);
+        std::transform(b.begin(), b.end(), b.begin(), ::tolower);
+        if (a == b) { idx = i; break; }
+    }
+
     if (idx == -1) return std::nullopt;
     if (!schema[idx].is_primary_key) return std::nullopt;
 
@@ -181,85 +156,4 @@ std::optional<uint32_t> Executor::try_extract_pk_from_where(
     }
 
     return std::nullopt;
-}
-
-int Executor::find_column_index(const std::string& col_name,
-                                const std::vector<ColumnDefinition>& schema) const
-{
-    for (int i = 0; i < (int)schema.size(); i++) {
-        std::string a = col_name, b = schema[i].name;
-        std::transform(a.begin(), a.end(), a.begin(), ::tolower);
-        std::transform(b.begin(), b.end(), b.begin(), ::tolower);
-        if (a == b) return i;
-    }
-    return -1;
-}
-
-bool Executor::matches_where(const Row& row,
-                             const std::vector<ColumnDefinition>& schema,
-                             const std::optional<WhereClause>& where) const
-{
-    if (!where.has_value()) return true;
-
-    int idx = find_column_index(where->column, schema);
-    if (idx == -1 || idx >= (int)row.size()) return false;
-
-    return compare_values(row[idx], where->op, where->value);
-}
-
-bool Executor::compare_values(const Value& row_val,
-                              const std::string& op,
-                              const Value& where_val) const
-{
-    auto cmp = [&op](const auto& a, const auto& b) -> bool {
-        if (op == "=")  return a == b;
-        if (op == "!=") return a != b;
-        if (op == "<")  return a <  b;
-        if (op == ">")  return a >  b;
-        if (op == "<=") return a <= b;
-        if (op == ">=") return a >= b;
-        return false;
-    };
-
-    // int == int
-    if (std::holds_alternative<int32_t>(row_val) &&
-        std::holds_alternative<int32_t>(where_val)) {
-        return cmp(std::get<int32_t>(row_val), std::get<int32_t>(where_val));
-    }
-
-    // double == double
-    if (std::holds_alternative<double>(row_val) &&
-        std::holds_alternative<double>(where_val)) {
-        return cmp(std::get<double>(row_val), std::get<double>(where_val));
-    }
-
-    // int i doubleo onda konvertujemo int u double
-    if (std::holds_alternative<int32_t>(row_val) &&
-        std::holds_alternative<double>(where_val)) {
-        return cmp((double)std::get<int32_t>(row_val), std::get<double>(where_val));
-    }
-    if (std::holds_alternative<double>(row_val) &&
-        std::holds_alternative<int32_t>(where_val)) {
-        return cmp(std::get<double>(row_val), (double)std::get<int32_t>(where_val));
-    }
-
-    // string == string
-    if (std::holds_alternative<std::string>(row_val) &&
-        std::holds_alternative<std::string>(where_val)) {
-        return cmp(std::get<std::string>(row_val), std::get<std::string>(where_val));
-    }
-
-    // bool == bool
-    if (std::holds_alternative<bool>(row_val) &&
-        std::holds_alternative<bool>(where_val)) {
-        return cmp(std::get<bool>(row_val), std::get<bool>(where_val));
-    }
-
-    // NULL vrednosti samo NULL = NULL je true, sve ostalo false
-    if (std::holds_alternative<std::monostate>(row_val) &&
-        std::holds_alternative<std::monostate>(where_val)) {
-        return op == "=";
-    }
-
-    return false;
 }

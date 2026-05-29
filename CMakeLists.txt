@@ -63,6 +63,8 @@ add_executable (
   "src/InsertOperator.cpp"
   "src/DeleteOperator.h"
   "src/DeleteOperator.cpp"
+  "src/UpdateOperator.h"
+  "src/UpdateOperator.cpp"
 )
 
 
