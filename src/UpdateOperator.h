@@ -17,6 +17,7 @@ public:
     std::unique_ptr<Operator> child_;
     std::vector<std::pair<std::string, Value>> set_clauses_;
     std::vector<ColumnDefinition> dummy_schema_;
+    bool has_executed_ = false;
 
     int find_column_index(const std::string& col_name) const;
 };

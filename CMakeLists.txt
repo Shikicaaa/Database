@@ -65,6 +65,11 @@ add_executable (
   "src/DeleteOperator.cpp"
   "src/UpdateOperator.h"
   "src/UpdateOperator.cpp"
+  "src/IndexScanOperator.h"
+  "src/IndexScanOperator.cpp"
+  "src/Planner.h"
+  "src/Planner.cpp"
+  "src/LogicalPlan.h"
 )
 
 

@@ -16,4 +16,5 @@ private:
     Table* table_;
     std::unique_ptr<Operator> child_;
     std::vector<ColumnDefinition> dummy_schema_;
+    bool has_executed_ = false;
 };

@@ -8,6 +8,7 @@ UpdateOperator::UpdateOperator(std::unique_ptr<Operator> child, Table* table, co
 
 void UpdateOperator::Init() {
     child_->Init();
+    has_executed_ = false;
 }
 
 int UpdateOperator::find_column_index(const std::string& col_name) const {
@@ -26,6 +27,9 @@ const std::vector<ColumnDefinition>& UpdateOperator::GetOutputSchema() const {
 }
 
 std::optional<Row> UpdateOperator::Next() {
+    if (has_executed_) {
+        return std::nullopt;
+    }
     std::optional<Row> row = child_->Next();
     int update_count = 0;
     while(row.has_value()){
@@ -46,5 +50,6 @@ std::optional<Row> UpdateOperator::Next() {
         }
         row = child_->Next();
     }
+    has_executed_ = true;
     return Row{Value(update_count)};
 }

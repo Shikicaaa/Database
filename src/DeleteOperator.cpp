@@ -6,6 +6,7 @@ DeleteOperator::DeleteOperator(std::unique_ptr<Operator> child, Table* table) : 
 
 void DeleteOperator::Init() {
     child_->Init();
+    has_executed_ = false;
 }
 
 const std::vector<ColumnDefinition>& DeleteOperator::GetOutputSchema() const {
@@ -13,6 +14,9 @@ const std::vector<ColumnDefinition>& DeleteOperator::GetOutputSchema() const {
 }
 
 std::optional<Row> DeleteOperator::Next() {
+    if (has_executed_) {
+        return std::nullopt;
+    }
     std::optional<Row> row = child_->Next();
     int delete_count = 0;
     while(row.has_value()){
@@ -24,5 +28,6 @@ std::optional<Row> DeleteOperator::Next() {
         }
         row = child_->Next();
     }
+    has_executed_ = true;
     return Row{Value(delete_count)};
 }
