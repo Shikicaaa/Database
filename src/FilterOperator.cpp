@@ -28,8 +28,6 @@ std::optional<Row> FilterOperator::Next(){
                 return current_row;
             }
         } else {
-            // Ako nema where_clause uslova (npr. SELECT * FROM tabla bez WHERE),
-            // vraćamo red kakav jeste i NE gutamo ga!
             return current_row;
         }
         current_row = child_->Next();

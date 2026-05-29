@@ -7,6 +7,7 @@
 #include "SeqScanOperator.h"
 #include "ValuesOperator.h"
 #include "InsertOperator.h"
+#include "DeleteOperator.h"
 
 
 Executor::Executor(Catalog& catalog) : catalog_(catalog) {}
@@ -151,33 +152,15 @@ ExecutionResult Executor::execute_delete(const DeleteStatement& stmt)
         return {false, "Table '" + stmt.table_name + "' does not exist"};
     }
 
-    const auto& schema = table->get_columns();
+    std::unique_ptr<Operator> scan = std::make_unique<SeqScanOperator>(table);
+    std::unique_ptr<Operator> filter = std::make_unique<FilterOperator>(std::move(scan), stmt.where_clause);
+    std::unique_ptr<Operator> del_op = std::make_unique<DeleteOperator>(std::move(filter), table);
 
-    std::vector<uint32_t> pks_to_delete;
-    std::optional<uint32_t> pk_val = try_extract_pk_from_where(stmt.where_clause, schema);
+    del_op->Init();
+    auto result = del_op->Next();
+    int count = std::get<int32_t>(result.value()[0]);
 
-    if (pk_val.has_value()) {
-        auto found = table->find_row(pk_val.value());
-        if (found.has_value() && matches_where(found.value(), schema, stmt.where_clause)) {
-            pks_to_delete.push_back(pk_val.value());
-        }
-    } else {
-        std::vector<Row> all_rows = table->scan_all();
-        for (const auto& row : all_rows) {
-            if (matches_where(row, schema, stmt.where_clause)) {
-                pks_to_delete.push_back(table->extract_primary_key(row));
-            }
-        }
-    }
-
-    int deleted = 0;
-    for (uint32_t pk : pks_to_delete) {
-        if (table->remove_row(pk)) {
-            deleted++;
-        }
-    }
-
-    return {true, std::to_string(deleted) + " row(s) deleted"};
+    return {true, std::to_string(count) + " row(s) deleted"};
 }
 
 // Helperi
