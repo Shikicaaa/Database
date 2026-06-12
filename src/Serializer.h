@@ -7,8 +7,31 @@
 #include <vector>
 #include <variant>
 
-struct DateUnix {
-    int32_t timestamp;
+struct DateTime {
+    int16_t year   = 0;
+    uint8_t month  = 1;   // 1-12
+    uint8_t day    = 1;   // 1-31
+    uint8_t hour   = 0;   // 0-23
+    uint8_t minute = 0;   // 0-59
+    uint8_t second = 0;   // 0-59
+
+    bool operator==(const DateTime& o) const {
+        return year==o.year && month==o.month && day==o.day
+            && hour==o.hour && minute==o.minute && second==o.second;
+    }
+
+    bool operator<(const DateTime& o) const {
+        if (year   != o.year)   return year   < o.year;
+        if (month  != o.month)  return month  < o.month;
+        if (day    != o.day)    return day    < o.day;
+        if (hour   != o.hour)   return hour   < o.hour;
+        if (minute != o.minute) return minute < o.minute;
+        return second < o.second;
+    }
+    bool operator!=(const DateTime& o) const { return !(*this == o); }
+    bool operator>(const DateTime& o)  const { return o < *this; }
+    bool operator<=(const DateTime& o) const { return !(o < *this); }
+    bool operator>=(const DateTime& o) const { return !(*this < o); }
 };
 
 enum class DataType {
@@ -28,7 +51,7 @@ struct ColumnDefinition {
     uint16_t max_length; 
 };
 
-using Value = std::variant<std::monostate, int32_t, std::string, double, DateUnix,  bool>;
+using Value = std::variant<std::monostate, int32_t, std::string, double, DateTime,  bool>;
 using Row = std::vector<Value>;
 
 class Serializer {

@@ -105,6 +105,7 @@ private:
     DataType parse_data_type();
     std::string parse_operator();
     std::pair<std::string, std::string> parse_qualified_identifier(); // returns {table_alias, column_name}
+    DateTime parse_date_literal(const std::string& str);
 public:
     explicit Parser(std::vector<Token> tokeni) : tokeni(std::move(tokeni)) {}
 
