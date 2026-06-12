@@ -28,22 +28,57 @@ std::unique_ptr<Operator> Planner::create_plan(const Statement& stmt) {
 }
 
 std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
-    Table* table = catalog_.get_table(stmt.table_name);
-    if (!table) {
+    Table* left_table = catalog_.get_table(stmt.table_name);
+    if (!left_table) {
         throw std::runtime_error("Table '" + stmt.table_name + "' does not exist");
     }
 
-    std::unique_ptr<LogicalNode> logical_plan = create_logical_plan_for_select(stmt);
-    
-    logical_plan = optimize_select(std::move(logical_plan));
+    std::unique_ptr<Operator> current_op = std::make_unique<SeqScanOperator>(left_table);
 
-    return create_physical_plan(std::move(logical_plan));
+    // Alias koji se primenjuje na levu stranu prvog joina
+    std::string current_alias = stmt.table_alias;
+
+    for (const auto& join : stmt.joins) {
+        Table* right_table = catalog_.get_table(join.right_table);
+        if (!right_table) {
+            throw std::runtime_error("Table '" + join.right_table + "' does not exist");
+        }
+
+        std::unique_ptr<Operator> right_op = std::make_unique<SeqScanOperator>(right_table);
+        current_op = std::make_unique<JoinOperator>(
+            std::move(current_op), std::move(right_op), join.condition,
+            current_alias, join.right_alias);
+
+        // Nakon joina, leva strana za sledeći join nema poseban alias
+        // (output shema već sadrži prefixovane nazive)
+        current_alias = "";
+    }
+
+    if (stmt.where_clause.has_value()) {
+        current_op = std::make_unique<FilterOperator>(std::move(current_op), stmt.where_clause);
+    }
+
+    if (!stmt.columns.empty() && !(stmt.columns.size() == 1 && stmt.columns[0] == "*")) {
+        current_op = std::make_unique<ProjectOperator>(std::move(current_op), stmt.columns);
+    }
+
+    return current_op;
 }
 
 std::unique_ptr<LogicalNode> Planner::create_logical_plan_for_select(const SelectStatement& stmt) {
-    std::unique_ptr<LogicalNode> scan = std::make_unique<LogicalScan>(stmt.table_name);
+    std::unique_ptr<LogicalNode> current_node = std::make_unique<LogicalScan>(stmt.table_name);
 
-    std::unique_ptr<LogicalNode> filter = std::make_unique<LogicalFilter>(stmt.where_clause, std::move(scan));
+    std::string current_alias = stmt.table_alias;
+    for(const auto& join : stmt.joins) {
+        std::unique_ptr<LogicalNode> right_node = std::make_unique<LogicalScan>(join.right_table);
+        current_node = std::make_unique<LogicalJoin>(
+            join.type, join.condition,
+            std::move(current_node), std::move(right_node),
+            current_alias, join.right_alias);
+        current_alias = "";
+    }
+    
+    std::unique_ptr<LogicalNode> filter = std::make_unique<LogicalFilter>(stmt.where_clause, std::move(current_node));
 
     std::unique_ptr<LogicalNode> project = std::make_unique<LogicalProject>(stmt.columns, std::move(filter));
 
@@ -170,6 +205,14 @@ std::unique_ptr<Operator> Planner::create_physical_plan(std::unique_ptr<LogicalN
             auto* i = static_cast<LogicalIndexScan*>(node.get());
             Table* table = catalog_.get_table(i->table_name_);
             return std::make_unique<IndexScanOperator>(table, i->primary_key_value_);
+        }
+        case LogicalNodeType::JOIN: {
+            auto* j = static_cast<LogicalJoin*>(node.get());
+            auto left_child = create_physical_plan(std::move(j->children_[0]));
+            auto right_child = create_physical_plan(std::move(j->children_[1]));
+            return std::make_unique<JoinOperator>(
+                std::move(left_child), std::move(right_child),
+                j->condition_, j->left_alias_, j->right_alias_);
         }
 
         default:

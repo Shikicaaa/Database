@@ -67,12 +67,68 @@ Statement Parser::parse_statement()
         case TokenType::UPDATE: return parse_update();
         case TokenType::DELETE: return parse_delete();
         case TokenType::CREATE: return parse_create_table();
+        case TokenType::JOIN:  return parse_join();
         default:
             throw std::runtime_error(
                 "Syntax error at line " + std::to_string(peek().line) +
-                ": expected SELECT/INSERT/UPDATE/DELETE/CREATE, got '" +
+                ": expected SELECT/INSERT/UPDATE/DELETE/CREATE/JOIN, got '" +
                 peek().value + "'");
     }
+}
+
+/*
+
+
+
+*/
+
+std::pair<std::string, std::string> Parser::parse_qualified_identifier()
+{
+    std::string first = expect(TokenType::IDENTIFIER, "expected identifier").value;
+    if (match(TokenType::DOT)) {
+        std::string second = expect(TokenType::IDENTIFIER, "expected identifier after '.'").value;
+        return {first, second};
+    }
+    return {"", first}; // No table alias
+}
+
+JoinStatement Parser::parse_join()
+{
+    JoinStatement stmt;
+ 
+    // [LEFT|RIGHT|FULL [OUTER]] JOIN  or JOIN (= INNER)
+    if (match(TokenType::LEFT)) {
+        match(TokenType::OUTER);
+        stmt.type = JoinType::LEFT;
+        expect(TokenType::JOIN, "expected JOIN after LEFT");
+    } else if (match(TokenType::RIGHT)) {
+        match(TokenType::OUTER);
+        stmt.type = JoinType::RIGHT;
+        expect(TokenType::JOIN, "expected JOIN after RIGHT");
+    } else if (match(TokenType::FULL)) {
+        match(TokenType::OUTER);
+        stmt.type = JoinType::FULL_OUTER;
+        expect(TokenType::JOIN, "expected JOIN after FULL");
+    } else {
+        expect(TokenType::JOIN, "expected JOIN");
+        stmt.type = JoinType::INNER;
+    }
+ 
+    stmt.right_table = expect(TokenType::IDENTIFIER, "expected right table name").value;
+ 
+    if (check(TokenType::IDENTIFIER)) {
+        stmt.right_alias = advance().value;
+    }
+ 
+    expect(TokenType::ON, "expected ON");
+ 
+    auto [lq, lc] = parse_qualified_identifier();
+    stmt.condition.left_column = lq.empty() ? lc : lq + "." + lc; // if no qualifier, use column name as is
+    stmt.condition.op              = parse_operator();
+    auto [rq, rc] = parse_qualified_identifier();
+    stmt.condition.right_column = rq.empty() ? rc : rq + "." + rc; // if no qualifier, use column name as is
+ 
+    return stmt;
 }
 
 //  SELECT
@@ -83,6 +139,12 @@ Statement Parser::parse_statement()
 //  Npr:
 //    SELECT * FROM Employees
 //    SELECT ID, Name FROM Employees WHERE ID = 42
+// Ili
+/*
+    SELECT * FROM Employees e
+    JOIN Departments d ON e.DepartmentID = d.ID
+    WHERE e.Salary > 50000
+*/
 SelectStatement Parser::parse_select()
 {
     SelectStatement stmt;
@@ -98,7 +160,17 @@ SelectStatement Parser::parse_select()
     }
 
     expect(TokenType::FROM, "expected FROM");
+    
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
+    
+    if(check(TokenType::IDENTIFIER))
+    {
+        stmt.table_alias = expect(TokenType::IDENTIFIER, "expected table alias").value;
+    }
+    while(check(TokenType::JOIN) || check(TokenType::LEFT) || check(TokenType::RIGHT) || check(TokenType::FULL))
+    {
+        stmt.joins.push_back(parse_join());
+    }
 
     if (check(TokenType::WHERE)) {
         stmt.where_clause = parse_where();
@@ -280,7 +352,9 @@ WhereClause Parser::parse_where()
     WhereClause wc;
 
     expect(TokenType::WHERE, "expected WHERE");
-    wc.column = expect(TokenType::IDENTIFIER, "expected column name").value;
+    auto [qualifier, column] = parse_qualified_identifier();
+    wc.table_qualifier = qualifier;
+    wc.column          = column;
     wc.op     = parse_operator();
     wc.value  = parse_value();
 

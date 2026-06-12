@@ -8,6 +8,7 @@ enum class TokenType {
     // KEYWOWRD  
     SELECT, INSERT, UPDATE,
     DELETE, CREATE, DROP,
+    JOIN, LEFT, RIGHT, FULL, OUTER, ON,
     FROM, INTO, WHERE, SET, VALUES, TABLE,
     AND, OR, NOT, NULL_KW,
     PRIMARY, KEY, UNIQUE, NULLABLE,
@@ -32,6 +33,7 @@ enum class TokenType {
     COMMA, // ,
     SEMICOLON, // ;
     STAR, // *
+    DOT, // .
 
     EOF_TOKEN
 };

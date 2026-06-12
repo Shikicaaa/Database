@@ -17,10 +17,14 @@ std::optional<Row> FilterOperator::Next(){
     
     while(current_row.has_value()){
         if(where_clause_.has_value()){
-            uint32_t col_index = find_column_index(where_clause_->column, child_->GetOutputSchema());
+            std::string lookup = where_clause_->column;
+            if(!where_clause_->table_qualifier.empty()){
+                lookup = where_clause_->table_qualifier + "." + where_clause_->column;
+            }
+            uint32_t col_index = find_column_index(lookup, child_->GetOutputSchema());
             if (col_index == -1)
             {
-                std::cerr << "ERROR: Column " << where_clause_->column << " not found in schema!\n";
+                std::cerr << "ERROR: Column " << lookup << " not found in schema!\n";
                 return std::nullopt;
             }
             auto val = current_row.value()[col_index];
@@ -43,6 +47,17 @@ int FilterOperator::find_column_index(const std::string& col_name,
         std::transform(a.begin(), a.end(), a.begin(), ::tolower);
         std::transform(b.begin(), b.end(), b.begin(), ::tolower);
         if (a == b) return i;
+    }
+    for(int i = 0; i < (int)schema.size(); i++){
+        std::string b = schema[i].name;
+        auto dot = b.rfind(".");
+        if(dot != std::string::npos){
+            b = b.substr(dot + 1);
+        }
+        std::string a = col_name;
+        std::transform(a.begin(), a.end(), a.begin(), ::tolower);
+        std::transform(b.begin(), b.end(), b.begin(), ::tolower);
+        if(a == b) return i;
     }
     return -1;
 }

@@ -82,6 +82,9 @@ std::vector<Token> Lexer::tokenize()
                     tokens.emplace_back(TokenType::GT, ">", line_);
                 }
                 break;
+            case '.':
+                tokens.emplace_back(TokenType::DOT, ".", line_);
+                break;
             default:
                 throw std::runtime_error(std::string("Unexpected character '") + c + "' at line " + std::to_string(line_));
         }
@@ -227,6 +230,12 @@ TokenType Lexer::keyword_to_identifier(const std::string& upper)
     if(upper == "NUMBER") return TokenType::NUMBER_KW;
     if(upper == "BOOLEAN") return TokenType::BOOLEAN_KW;
     if(upper == "DATE") return TokenType::DATE_KW;
+    if(upper == "JOIN") return TokenType::JOIN;
+    if(upper == "LEFT") return TokenType::LEFT;
+    if(upper == "RIGHT") return TokenType::RIGHT;
+    if(upper == "FULL") return TokenType::FULL;
+    if(upper == "OUTER") return TokenType::OUTER;
+    if(upper == "ON") return TokenType::ON;
 
     return TokenType::IDENTIFIER;
 }

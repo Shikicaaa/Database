@@ -3,14 +3,19 @@
 #include <vector>
 #include <memory>
 #include <optional>
-#include "Parser/Parser.h"
+#include "JoinTypes.h"
+
+enum class JoinType;
+struct JoinCondition;
 
 enum class LogicalNodeType {
     SCAN,
     FILTER,
     PROJECT,
-    INDEX_SCAN
+    INDEX_SCAN,
+    JOIN
 };
+
 
 class LogicalNode {
 public:
@@ -18,6 +23,28 @@ public:
     virtual LogicalNodeType GetType() const = 0;
     
     std::vector<std::unique_ptr<LogicalNode>> children_;
+};
+
+class LogicalJoin : public LogicalNode {
+public:
+    JoinType join_type_;
+    JoinCondition condition_;
+    std::string left_alias_;
+    std::string right_alias_;
+
+    explicit LogicalJoin(
+        JoinType type, JoinCondition condition,
+        std::unique_ptr<LogicalNode> left,
+        std::unique_ptr<LogicalNode> right,
+        const std::string& left_alias  = "",
+        const std::string& right_alias = ""
+    ): join_type_(type), condition_(condition),
+        left_alias_(left_alias), right_alias_(right_alias)
+    {
+        children_.push_back(std::move(left));
+        children_.push_back(std::move(right));
+    }
+    LogicalNodeType GetType() const override { return LogicalNodeType::JOIN; }
 };
 
 class LogicalScan : public LogicalNode {
@@ -60,4 +87,3 @@ public:
     
     LogicalNodeType GetType() const override { return LogicalNodeType::INDEX_SCAN; }
 };
-

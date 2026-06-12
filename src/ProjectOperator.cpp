@@ -17,21 +17,41 @@ void ProjectOperator::build_schema_and_mapping() {
     if(selected_columns_.empty()){
         output_schema_ = child_schema;
         column_mapping_.resize(child_schema.size());
-        for(int i = 0;i < child_schema.size(); i++){
+        for(int i = 0; i < (int)child_schema.size(); i++){
             column_mapping_[i] = i;
         }
         return;
-    }else{
-        for(const auto& col_name : selected_columns_){
-            auto it = std::find_if(child_schema.begin(), child_schema.end(), [&](const ColumnDefinition& col_def){
+    }
+
+    for(const auto& col_name : selected_columns_){
+        auto it = std::find_if(child_schema.begin(), child_schema.end(),
+            [&](const ColumnDefinition& col_def){
                 return col_def.name == col_name;
             });
-            if(it == child_schema.end()){
-                throw std::runtime_error("Column '" + col_name + "' not found in child schema");
-            }
-            output_schema_.push_back(*it);
-            column_mapping_.push_back(std::distance(child_schema.begin(), it));
+
+        if(it == child_schema.end()){
+            it = std::find_if(child_schema.begin(), child_schema.end(),
+                [&](const ColumnDefinition& col_def){
+                    const std::string& n = col_def.name;
+                    auto dot = n.rfind('.');
+                    std::string bare = (dot == std::string::npos) ? n : n.substr(dot + 1);
+                    auto cdot = col_name.rfind('.');
+                    std::string col_bare = (cdot == std::string::npos) ? col_name : col_name.substr(cdot + 1);
+                    return bare == col_bare && (cdot == std::string::npos || col_def.name == col_name);
+                });
         }
+
+        if(it == child_schema.end()){
+            throw std::runtime_error("Column '" + col_name + "' not found in child schema");
+        }
+
+        ColumnDefinition out_col = *it;
+        auto dot = col_name.rfind('.');
+        if (dot != std::string::npos) {
+            out_col.name = col_name.substr(dot + 1);
+        }
+        output_schema_.push_back(out_col);
+        column_mapping_.push_back(std::distance(child_schema.begin(), it));
     }
 }
 

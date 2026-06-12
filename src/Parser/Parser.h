@@ -1,23 +1,37 @@
 #pragma once
 #include "Lexer.h"
 #include "../Serializer.h"
+#include "../JoinTypes.h"
+#include "../JoinOperator.h"
 
 #include <variant>
 #include <optional>
 #include <vector>
 #include <string>
 
+struct JoinStatement
+{
+    JoinType type;
+    std::string left_table;
+    std::string right_table;
+    std::string left_alias;
+    std::string right_alias;
+    JoinCondition condition;
+};
+
 struct WhereClause
 {
+    std::string table_qualifier;
     std::string column;
     std::string op;
     Value value;
 };
 
-struct SelectStatement
-{
+struct SelectStatement {
     std::string table_name;
+    std::string table_alias;
     std::vector<std::string> columns;
+    std::vector<JoinStatement> joins;
     std::optional<WhereClause> where_clause;
 };
 
@@ -47,12 +61,19 @@ struct CreateTableStatement
 };
 
 
+struct TableReference {
+    std::string table_name;
+    std::string alias;  // nullable
+};
+
+
 using Statement = std::variant<
     SelectStatement,
     InsertStatement,
     UpdateStatement,
     DeleteStatement,
-    CreateTableStatement
+    CreateTableStatement,
+    JoinStatement
 >;
 
 
@@ -78,11 +99,12 @@ private:
     UpdateStatement parse_update();
     DeleteStatement parse_delete();
     CreateTableStatement parse_create_table();
-
+    JoinStatement parse_join();
     WhereClause parse_where();
     Value parse_value();
     DataType parse_data_type();
     std::string parse_operator();
+    std::pair<std::string, std::string> parse_qualified_identifier(); // returns {table_alias, column_name}
 public:
     explicit Parser(std::vector<Token> tokeni) : tokeni(std::move(tokeni)) {}
 
