@@ -1,6 +1,7 @@
 #pragma once
 #include "Operator.h"
 #include "Table.h"
+#include "Serializer.h"
 #include <memory>
 
 class InsertOperator : public Operator {

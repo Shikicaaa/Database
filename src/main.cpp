@@ -42,6 +42,13 @@ static void print_result(const ExecutionResult& result)
             return std::get<std::string>(v);
         if (std::holds_alternative<bool>(v))
             return std::get<bool>(v) ? "TRUE" : "FALSE";
+        if (std::holds_alternative<DateTime>(v)) {
+            const DateTime& dt = std::get<DateTime>(v);
+            char buf[20];
+            std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
+                dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+            return std::string(buf);
+        }
         return "?";
     };
 

@@ -66,16 +66,16 @@ std::vector<uint8_t> Serializer::serialize(
 
             case DataType::DATE: {
                 //Unix timestamp
-                DateUnix date = std::get<DateUnix>(row[i]);
-                int32_t timestamp = date.timestamp;
-
-                uint8_t bytes[4];
-                bytes[0] = (timestamp >> 24) & 0xFF;
-                bytes[1] = (timestamp >> 16) & 0xFF;
-                bytes[2] = (timestamp >> 8) & 0xFF;
-                bytes[3] = timestamp & 0xFF;
-
-                buffer.insert(buffer.end(), bytes, bytes + 4);
+                DateTime date = std::get<DateTime>(row[i]);
+                uint8_t bytes[7];
+                bytes[0] = (static_cast<uint16_t>(date.year) >> 8) & 0xFF;
+                bytes[1] =  static_cast<uint16_t>(date.year)       & 0xFF;
+                bytes[2] = date.month;
+                bytes[3] = date.day;
+                bytes[4] = date.hour;
+                bytes[5] = date.minute;
+                bytes[6] = date.second;
+                buffer.insert(buffer.end(), bytes, bytes + 7);
                 break;
             }
         }
@@ -160,17 +160,16 @@ Row Serializer::deserialize(
             }
 
             case DataType::DATE: {
-                if (ptr + 4 > end) return row;
-
-                int32_t timestamp = (static_cast<int32_t>(ptr[0]) << 24) |
-                                    (static_cast<int32_t>(ptr[1]) << 16) |
-                                    (static_cast<int32_t>(ptr[2]) << 8)  |
-                                    (static_cast<int32_t>(ptr[3]));
-                ptr += 4;
-
-                DateUnix date;
-                date.timestamp = timestamp;
-                row.push_back(Value(date));
+                if (ptr + 7 > end) return row;
+                DateTime dt;
+                dt.year   = static_cast<int16_t>((static_cast<uint16_t>(ptr[0]) << 8) | ptr[1]);
+                dt.month  = ptr[2];
+                dt.day    = ptr[3];
+                dt.hour   = ptr[4];
+                dt.minute = ptr[5];
+                dt.second = ptr[6];
+                ptr += 7;
+                row.push_back(Value(dt));
                 break;
             }
         }

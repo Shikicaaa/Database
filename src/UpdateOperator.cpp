@@ -1,4 +1,5 @@
 #include "UpdateOperator.h"
+#include "TypeCoercion.h"
 #include <algorithm>
 
 UpdateOperator::UpdateOperator(std::unique_ptr<Operator> child, Table* table, const std::vector<std::pair<std::string, Value>>& set_clauses) 
@@ -39,7 +40,7 @@ std::optional<Row> UpdateOperator::Next() {
         for (const auto& [col_name, new_val] : set_clauses_) {
             int idx = find_column_index(col_name);
             if (idx != -1) {
-                new_row[idx] = new_val;
+                new_row[idx] = coerce_value(new_val, table_->get_columns()[idx]);
             }
         }
 

@@ -1,4 +1,5 @@
 #include "InsertOperator.h"
+#include "TypeCoercion.h"
 
 InsertOperator::InsertOperator(Table* table, std::unique_ptr<Operator> child)
     : table_(table), child_(std::move(child)), has_executed_(false) 
@@ -22,7 +23,8 @@ std::optional<Row> InsertOperator::Next() {
     std::optional<Row> row = child_->Next();
     int row_count = 0;
     while(row.has_value()){
-        if(!table_->insert_row(row.value())){
+        Row coerced = coerce_row(row.value(), table_->get_columns());
+        if(!table_->insert_row(coerced)){
             std::cerr << "ERROR: Failed to insert row into table '" << table_->get_columns()[0].name << "'\n";
         } else {
             row_count++;
