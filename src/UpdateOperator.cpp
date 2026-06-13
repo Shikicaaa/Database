@@ -31,12 +31,17 @@ std::optional<Row> UpdateOperator::Next() {
     if (has_executed_) {
         return std::nullopt;
     }
-    std::optional<Row> row = child_->Next();
+
+    std::vector<Row> target_rows;
+    for (auto row = child_->Next(); row.has_value(); row = child_->Next()) {
+        target_rows.push_back(row.value());
+    }
+
     int update_count = 0;
-    while(row.has_value()){
-        uint32_t pk = table_->extract_primary_key(row.value());
-        
-        Row new_row = row.value();
+    for (const Row& old_row : target_rows) {
+        uint32_t pk = table_->extract_primary_key(old_row);
+
+        Row new_row = old_row;
         for (const auto& [col_name, new_val] : set_clauses_) {
             int idx = find_column_index(col_name);
             if (idx != -1) {
@@ -44,13 +49,14 @@ std::optional<Row> UpdateOperator::Next() {
             }
         }
 
-        if(!table_->update_row(pk, new_row)){
-            std::cerr << "ERROR: Failed to update row with primary key " << pk << " in table '" << table_->get_columns()[0].name << "'\n";
+        if (!table_->update_row(pk, new_row)) {
+            std::cerr << "ERROR: Failed to update row with primary key " << pk
+                      << " in table '" << table_->get_columns()[0].name << "'\n";
         } else {
             update_count++;
         }
-        row = child_->Next();
     }
+
     has_executed_ = true;
     return Row{Value(update_count)};
 }
