@@ -17,17 +17,22 @@ std::optional<Row> DeleteOperator::Next() {
     if (has_executed_) {
         return std::nullopt;
     }
-    std::optional<Row> row = child_->Next();
+
+    std::vector<uint32_t> pks;
+    for (auto row = child_->Next(); row.has_value(); row = child_->Next()) {
+        pks.push_back(table_->extract_primary_key(row.value()));
+    }
+
     int delete_count = 0;
-    while(row.has_value()){
-        uint32_t pk = table_->extract_primary_key(row.value());
-        if(!table_->remove_row(pk)){
-            std::cerr << "ERROR: Failed to delete row with primary key " << pk << " from table '" << table_->get_columns()[0].name << "'\n";
+    for (uint32_t pk : pks) {
+        if (!table_->remove_row(pk)) {
+            std::cerr << "ERROR: Failed to delete row with primary key " << pk
+                      << " from table '" << table_->get_columns()[0].name << "'\n";
         } else {
             delete_count++;
         }
-        row = child_->Next();
     }
+
     has_executed_ = true;
     return Row{Value(delete_count)};
 }
