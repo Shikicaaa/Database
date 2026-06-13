@@ -28,6 +28,7 @@ class Table {
         uint32_t extract_primary_key(const Row& row);
         const std::vector<ColumnDefinition>& get_columns() const;
         std::vector<Row> scan_all();
+        const std::string& get_name() const { return name; }
         BTree& get_btree() { return btree; }
         Serializer get_serializer() { return serializer; }
 };

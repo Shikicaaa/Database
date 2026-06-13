@@ -204,6 +204,18 @@ std::vector<uint8_t> Serializer::serialize_schema(const std::vector<ColumnDefini
         // Max length (2 bytes)
         buffer.push_back((col.max_length >> 8) & 0xFF);
         buffer.push_back(col.max_length & 0xFF);
+
+        // FK [1B has_pk] then if has_pk then [1B table_name_len][table_name][1B column_name_len][column_name]
+        bool has_fk = !col.fk_table.empty() && !col.fk_column.empty();
+        buffer.push_back(has_fk ? 1 : 0);
+        if (has_fk) {
+            uint8_t fk_table_len = static_cast<uint8_t>(col.fk_table.size());
+            buffer.push_back(fk_table_len);
+            buffer.insert(buffer.end(), col.fk_table.begin(), col.fk_table.end());
+            uint8_t fk_column_len = static_cast<uint8_t>(col.fk_column.size());
+            buffer.push_back(fk_column_len);
+            buffer.insert(buffer.end(), col.fk_column.begin(), col.fk_column.end());
+        }
     }
     
     return buffer;
@@ -242,8 +254,27 @@ std::vector<ColumnDefinition> Serializer::deserialize_schema(const uint8_t* data
         // Max length
         uint16_t max_len = (static_cast<uint16_t>(ptr[0]) << 8) | ptr[1];
         ptr += 2;
-        
-        schema.push_back({name, type, is_pk, is_nullable, is_unique, max_len});
+
+        // Foreign key
+        std::string fk_table, fk_column;
+        if(ptr < end) {
+            bool has_fk = (*ptr++ != 0);
+            if (has_fk && ptr < end){
+                uint8_t table_len = *ptr++;
+                if(ptr + table_len <= end){
+                    fk_table = std::string(reinterpret_cast<const char*>(ptr), table_len);
+                    ptr += table_len;
+                }
+                if(ptr < end){
+                    uint8_t col_len = *ptr++;
+                    if(ptr + col_len <= end){
+                        fk_column = std::string(reinterpret_cast<const char*>(ptr), col_len);
+                        ptr += col_len;
+                    }
+                }
+            } 
+        }
+        schema.push_back({name, type, is_pk, is_nullable, is_unique, max_len, fk_table, fk_column});
     }
     
     return schema;

@@ -2,11 +2,12 @@
 #include "Operator.h"
 #include "Table.h"
 #include "Serializer.h"
+#include "Catalog.h"
 #include <memory>
 
 class InsertOperator : public Operator {
 public:
-    InsertOperator(Table* table, std::unique_ptr<Operator> child);
+    InsertOperator(Table* table, std::unique_ptr<Operator> child, Catalog* catalog = nullptr);
 
     void Init() override;
     std::optional<Row> Next() override;
@@ -15,6 +16,7 @@ public:
 private:
     Table* table_;
     std::unique_ptr<Operator> child_;
+    Catalog* catalog_;
 
     std::vector<ColumnDefinition> dummy_schema_;
 

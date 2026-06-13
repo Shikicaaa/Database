@@ -344,6 +344,14 @@ DeleteStatement Parser::parse_delete()
 //        Name   VARCHAR(255),
 //        Salary NUMBER  NULLABLE
 //    )
+/*
+    CREATE TABLE Orders (
+        ID     INT PRIMARY KEY,
+        UserID INT REFERENCES Users(ID),
+        Total  NUMBER NULLABLE
+    );
+
+*/
 CreateTableStatement Parser::parse_create_table()
 {
     CreateTableStatement stmt;
@@ -385,6 +393,11 @@ CreateTableStatement Parser::parse_create_table()
                 col.is_unique = true;
             } else if (match(TokenType::NULLABLE)) {
                 col.is_nullable = true;
+            } else if (match(TokenType::REFERENCES)) {
+                col.fk_table = expect(TokenType::IDENTIFIER, "expected foreign key table name").value;
+                expect(TokenType::LPAR, "expected '(' after foreign key table name");
+                col.fk_column = expect(TokenType::IDENTIFIER, "expected foreign key column name").value;
+                expect(TokenType::RPAR, "expected ')' after foreign key column name");
             } else {
                 parsing_modifiers = false;
             }

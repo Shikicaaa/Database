@@ -49,6 +49,8 @@ struct ColumnDefinition {
     bool is_nullable;
     bool is_unique;
     uint16_t max_length; 
+    std::string fk_table;
+    std::string fk_column;
 };
 
 using Value = std::variant<std::monostate, int32_t, std::string, double, DateTime,  bool>;

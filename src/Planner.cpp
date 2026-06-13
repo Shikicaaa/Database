@@ -35,7 +35,6 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
 
     std::unique_ptr<Operator> current_op = std::make_unique<SeqScanOperator>(left_table);
 
-    // Alias koji se primenjuje na levu stranu prvog joina
     std::string current_alias = stmt.table_alias;
 
     for (const auto& join : stmt.joins) {
@@ -49,8 +48,6 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
             std::move(current_op), std::move(right_op), join.condition,
             current_alias, join.right_alias);
 
-        // Nakon joina, leva strana za sledeći join nema poseban alias
-        // (output shema već sadrži prefixovane nazive)
         current_alias = "";
     }
 
@@ -129,7 +126,7 @@ std::unique_ptr<Operator> Planner::plan_insert(const InsertStatement& stmt) {
     rows.push_back(stmt.values);
 
     auto values_op = std::make_unique<ValuesOperator>(rows, table->get_columns());
-    return std::make_unique<InsertOperator>(table, std::move(values_op));
+    return std::make_unique<InsertOperator>(table, std::move(values_op), &catalog_);
 }
 
 std::unique_ptr<Operator> Planner::plan_update(const UpdateStatement& stmt) {
@@ -144,7 +141,7 @@ std::unique_ptr<Operator> Planner::plan_update(const UpdateStatement& stmt) {
     std::unique_ptr<LogicalNode> optimized_plan = optimize_select(std::move(filter));
     std::unique_ptr<Operator> child = create_physical_plan(std::move(optimized_plan));
 
-    return std::make_unique<UpdateOperator>(std::move(child), table, stmt.set_clauses);
+    return std::make_unique<UpdateOperator>(std::move(child), table, stmt.set_clauses, &catalog_);
 }
 
 std::unique_ptr<Operator> Planner::plan_delete(const DeleteStatement& stmt) {
@@ -159,7 +156,7 @@ std::unique_ptr<Operator> Planner::plan_delete(const DeleteStatement& stmt) {
     std::unique_ptr<LogicalNode> optimized_plan = optimize_select(std::move(filter));
     std::unique_ptr<Operator> child = create_physical_plan(std::move(optimized_plan));
 
-    return std::make_unique<DeleteOperator>(std::move(child), table);
+    return std::make_unique<DeleteOperator>(std::move(child), table, &catalog_);
 }
 
 std::optional<uint32_t> Planner::try_extract_pk_from_where(

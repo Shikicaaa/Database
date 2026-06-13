@@ -2,17 +2,23 @@
 #include "Operator.h"
 #include "Table.h"
 #include "Parser/Parser.h"
+#include "Catalog.h"
 #include <memory>
 
 class UpdateOperator : public Operator {
 public:
-    UpdateOperator(std::unique_ptr<Operator> child, Table* table, const std::vector<std::pair<std::string, Value>>& set_clauses);
+    UpdateOperator(
+        std::unique_ptr<Operator> child, Table* table,
+        const std::vector<std::pair<std::string, Value>>& set_clauses,
+        Catalog* catalog = nullptr
+    );
     
     void Init() override;
     std::optional<Row> Next() override;
     const std::vector<ColumnDefinition>& GetOutputSchema() const override;
 
     private:
+    Catalog* catalog_;
     Table* table_;
     std::unique_ptr<Operator> child_;
     std::vector<std::pair<std::string, Value>> set_clauses_;
