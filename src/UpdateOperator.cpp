@@ -77,9 +77,29 @@ std::optional<Row> UpdateOperator::Next() {
                 if (old_pk_value != new_pk_value) {
                     auto refs = catalog_->get_referencing_tables(table_->get_name());
                     for (const auto& ref : refs) {
-                        // fk_value_exists returns true when the old PK IS found in the child
-                        // that means a child row still holds a reference, so we must block.
-                        if (catalog_->fk_value_exists(ref.child_table, ref.fk_column_name, old_pk_value)) {
+                        Table* child_table = catalog_->get_table(ref.child_table);
+                        if (!child_table) continue;
+
+                        int fk_idx = -1;
+                        const auto& child_cols = child_table->get_columns();
+                        for (size_t i = 0; i < child_cols.size(); ++i) {
+                            if (child_cols[i].name == ref.fk_column_name) {
+                                fk_idx = i;
+                                break;
+                            }
+                        }
+
+                        bool is_referenced = false;
+                        if (fk_idx != -1) {
+                            for (const Row& child_row : child_table->scan_all()) {
+                                if (child_row[fk_idx] == old_pk_value) {
+                                    is_referenced = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (is_referenced) {
                             std::cerr << "ERROR: Cannot update primary key value for column '" << col_name
                                       << "' because it is referenced by child table '" << ref.child_table
                                       << "' on column '" << ref.fk_column_name << "'.\n";

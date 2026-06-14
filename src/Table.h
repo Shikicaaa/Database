@@ -22,7 +22,7 @@ class Table {
 
         bool insert_row(const Row& row);
         std::optional<Row> find_row(uint32_t primary_key);
-        bool update_row(uint32_t primary_key, const Row& row);
+        bool update_row(uint32_t old_primary_key, const Row& new_row);
         bool remove_row(uint32_t primary_key);
 
         uint32_t extract_primary_key(const Row& row);

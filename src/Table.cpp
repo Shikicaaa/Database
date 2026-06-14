@@ -58,7 +58,16 @@ bool Table::update_row(uint32_t primary_key, const Row &row)
         return false;
     }
 
+    uint32_t new_primary_key = extract_primary_key(row);
     std::vector<uint8_t> serialized_data = serializer.serialize(columns, row);
+
+    if (primary_key != new_primary_key) {
+        if (!btree.remove(primary_key, 0)) {
+            return false;
+        }
+        return btree.insert(new_primary_key, 0, serialized_data.data(), serialized_data.size());
+    }
+
     return btree.update(primary_key, 0, serialized_data.data(), serialized_data.size());
 }
 
