@@ -205,6 +205,35 @@ bool Catalog::fk_value_exists(const std::string &table_name, const std::string &
     return parent->find_row(pk).has_value();
 }
 
+bool Catalog::child_has_fk_value(const std::string& child_table,
+                                    const std::string& fk_column_name,
+                                    const Value& value)
+{
+    Table* child = get_table(child_table);
+    if (!child) return false;
+
+    const auto& cols = child->get_columns();
+
+    // Find the index of the FK column in the child schema.
+    int fk_col_idx = -1;
+    for (int i = 0; i < (int)cols.size(); i++) {
+        if (cols[i].name == fk_column_name) {
+            fk_col_idx = i;
+            break;
+        }
+    }
+    if (fk_col_idx == -1) return false;
+
+    // Scan all child rows and compare the FK column value.
+    std::vector<Row> rows = child->scan_all();
+    for (const Row& row : rows) {
+        if ((int)row.size() > fk_col_idx && row[fk_col_idx] == value) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<FKReference> Catalog::get_referencing_tables(const std::string &parent_table_name)
 {
     std::vector<FKReference> references;

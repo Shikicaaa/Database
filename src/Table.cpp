@@ -50,25 +50,42 @@ std::optional<Row> Table::find_row(uint32_t primary_key)
     return row;
 }
 
-bool Table::update_row(uint32_t primary_key, const Row &row)
+bool Table::update_row(uint32_t old_primary_key, const Row &new_row)
 {
-    if (row.size() != columns.size())
+    if (new_row.size() != columns.size())
     {
         std::cerr << "ERROR: Row size doesn't match table schema!\n";
         return false;
     }
 
-    uint32_t new_primary_key = extract_primary_key(row);
-    std::vector<uint8_t> serialized_data = serializer.serialize(columns, row);
+    uint32_t new_primary_key = extract_primary_key(new_row);
 
-    if (primary_key != new_primary_key) {
-        if (!btree.remove(primary_key, 0)) {
-            return false;
-        }
-        return btree.insert(new_primary_key, 0, serialized_data.data(), serialized_data.size());
+    // Fast path: PK nije promenjen obicni in-place update.
+    if (old_primary_key == new_primary_key) {
+        std::vector<uint8_t> serialized_data = serializer.serialize(columns, new_row);
+        return btree.update(old_primary_key, 0, serialized_data.data(), serialized_data.size());
     }
 
-    return btree.update(primary_key, 0, serialized_data.data(), serialized_data.size());
+    // PK se promenio pa proveri da novi PK vec ne postoji u tabeli
+    if (find_row(new_primary_key).has_value()) {
+        std::cerr << "ERROR: Duplicate value for PRIMARY KEY " << new_primary_key
+                  << " — cannot change PK to an existing value.\n";
+        return false;
+    }
+
+    if (!btree.remove(old_primary_key, 0)) {
+        std::cerr << "ERROR: update_row failed to remove old PK " << old_primary_key << "\n";
+        return false;
+    }
+
+    std::vector<uint8_t> serialized_data = serializer.serialize(columns, new_row);
+    if (!btree.insert(new_primary_key, 0, serialized_data.data(), serialized_data.size())) {
+        std::cerr << "ERROR: update_row failed to insert under new PK " << new_primary_key
+                  << "; row is lost — data inconsistency!\n";
+        return false;
+    }
+
+    return true;
 }
 
 bool Table::remove_row(uint32_t primary_key)

@@ -1,5 +1,5 @@
 #include "Cursor.h"
-
+ 
 Cursor::Cursor(Table& table) 
     : table_(table), 
       pager_(table.get_btree().get_pager()),
@@ -14,10 +14,10 @@ Cursor::Cursor(Table& table)
         eof_ = true;
     }
 }
-
+ 
 bool Cursor::advance() {
     if (eof_) return false;
-
+ 
     Page* page = pager_.get_page(current_page_id_);
     SlottedPage sp(page->data);
     PageHeader* h = sp.header();
@@ -39,15 +39,15 @@ bool Cursor::advance() {
         return false;
     }
 }
-
+ 
 std::optional<std::vector<char>> Cursor::get_raw_current_record() {
     if (eof_) return std::nullopt;
-
+ 
     std::vector<char> raw_data;
     
     Page* page = pager_.get_page(current_page_id_);
     SlottedPage sp(page->data);
-
+ 
     uint16_t* pointers = sp.get_cell_pointers();
     LeafCellHeader* cell_header = reinterpret_cast<LeafCellHeader*>(page->data + pointers[cell_index_]);
     
@@ -61,7 +61,7 @@ std::optional<std::vector<char>> Cursor::get_raw_current_record() {
         return raw_data;
     }
 }
-
+ 
 std::optional<Row> Cursor::current_row() {
     auto raw_record = get_raw_current_record();
     if (!raw_record) return std::nullopt;

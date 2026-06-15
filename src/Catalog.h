@@ -44,8 +44,11 @@ public:
     bool table_exists(const std::string& name);
 
     // FK enforcement
-    // Returns true if the value exists as pk in referenced table
     bool fk_value_exists(const std::string& table_name, const std::string& column_name, const Value& value);
+
+    bool child_has_fk_value(const std::string& child_table,
+                            const std::string& fk_column_name,
+                            const Value& value);
 
     std::vector<FKReference> get_referencing_tables(const std::string& parent_table_name);
 

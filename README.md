@@ -33,5 +33,6 @@ Checklist:
 - [x] BTree split
 - [x] Table class and schema
 - [x] Schema serializer
-- [ ] Implement query planner
-- [ ] Implement joins (left, outer, inner, right)
+- [x] Implement query planner
+- [x] Implement joins (left, outer, inner, right)
+- [ ] Better UI

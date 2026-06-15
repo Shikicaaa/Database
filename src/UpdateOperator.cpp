@@ -69,7 +69,6 @@ std::optional<Row> UpdateOperator::Next() {
                 }
             }
 
-            // If the PK itself is being changed, reject if any child row still references the old PK
             if (!fk_violation && catalog_ && table_->get_columns()[idx].is_primary_key) {
                 Value old_pk_value = Value(static_cast<int32_t>(table_->extract_primary_key(old_row)));
                 Value new_pk_value = coerced;
@@ -77,29 +76,7 @@ std::optional<Row> UpdateOperator::Next() {
                 if (old_pk_value != new_pk_value) {
                     auto refs = catalog_->get_referencing_tables(table_->get_name());
                     for (const auto& ref : refs) {
-                        Table* child_table = catalog_->get_table(ref.child_table);
-                        if (!child_table) continue;
-
-                        int fk_idx = -1;
-                        const auto& child_cols = child_table->get_columns();
-                        for (size_t i = 0; i < child_cols.size(); ++i) {
-                            if (child_cols[i].name == ref.fk_column_name) {
-                                fk_idx = i;
-                                break;
-                            }
-                        }
-
-                        bool is_referenced = false;
-                        if (fk_idx != -1) {
-                            for (const Row& child_row : child_table->scan_all()) {
-                                if (child_row[fk_idx] == old_pk_value) {
-                                    is_referenced = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (is_referenced) {
+                        if (catalog_->child_has_fk_value(ref.child_table, ref.fk_column_name, old_pk_value)) {
                             std::cerr << "ERROR: Cannot update primary key value for column '" << col_name
                                       << "' because it is referenced by child table '" << ref.child_table
                                       << "' on column '" << ref.fk_column_name << "'.\n";

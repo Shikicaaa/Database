@@ -71,7 +71,7 @@ add_executable (
   "src/Planner.cpp"
   "src/LogicalPlan.h"
   "src/JoinOperator.h"
-  "src/JoinOperator.cpp"
+  "src/JoinOperator.cpp"    
 )
 
 
