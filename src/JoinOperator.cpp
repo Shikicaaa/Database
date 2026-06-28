@@ -7,14 +7,18 @@ JoinOperator::JoinOperator(
     std::unique_ptr<Operator> right,
     const JoinCondition& condition,
     const std::string& left_alias,
-    const std::string& right_alias
+    const std::string& right_alias,
+    JoinType join_type
 ) : left_(std::move(left)),
     right_(std::move(right)),
     condition_(condition),
     left_alias_(left_alias),
     right_alias_(right_alias),
+    join_type_(join_type),
     right_initialized_(false),
-    right_pos_(0)
+    right_pos_(0),
+    left_had_match_(false),
+    right_unmatched_pos_(0)
 {
     build_output_schema();
 }
@@ -45,32 +49,124 @@ const std::vector<ColumnDefinition>& JoinOperator::GetOutputSchema() const {
 void JoinOperator::Init() {
     left_->Init();
     right_->Init();
-    
+
     right_buffer_.clear();
     right_pos_ = 0;
-    while(auto row = right_->Next()) {
+    while (auto row = right_->Next()) {
         right_buffer_.push_back(std::move(*row));
     }
+
+    right_matched_.assign(right_buffer_.size(), false);
+    right_unmatched_pos_ = 0;
+    left_had_match_ = false;
 
     left_current_row_ = left_->Next();
     right_initialized_ = true;
 }
 
 std::optional<Row> JoinOperator::Next() {
+    if (join_type_ == JoinType::INNER) {
+        while (left_current_row_.has_value()) {
+            while (right_pos_ < right_buffer_.size()) {
+                const Row& right_row = right_buffer_[right_pos_];
+                if (evaluate_condition(*left_current_row_, right_row)) {
+                    Row merged = merge_rows(*left_current_row_, right_row);
+                    ++right_pos_;
+                    return merged;
+                }
+                ++right_pos_;
+            }
+            left_current_row_ = left_->Next();
+            right_pos_ = 0;
+        }
+        return std::nullopt;
+    }
+
+    if (join_type_ == JoinType::LEFT) {
+        while (left_current_row_.has_value()) {
+            while (right_pos_ < right_buffer_.size()) {
+                const Row& right_row = right_buffer_[right_pos_];
+                if (evaluate_condition(*left_current_row_, right_row)) {
+                    left_had_match_ = true;
+                    Row merged = merge_rows(*left_current_row_, right_row);
+                    ++right_pos_;
+                    return merged;
+                }
+                ++right_pos_;
+            }
+            if (!left_had_match_) {
+                Row null_right(right_->GetOutputSchema().size(), Value{std::monostate{}});
+                Row result = merge_rows(*left_current_row_, null_right);
+                left_current_row_ = left_->Next();
+                right_pos_ = 0;
+                left_had_match_ = false;
+                return result;
+            }
+            left_current_row_ = left_->Next();
+            right_pos_ = 0;
+            left_had_match_ = false;
+        }
+        return std::nullopt;
+    }
+
+    if (join_type_ == JoinType::RIGHT) {
+        while (left_current_row_.has_value()) {
+            while (right_pos_ < right_buffer_.size()) {
+                const Row& right_row = right_buffer_[right_pos_];
+                if (evaluate_condition(*left_current_row_, right_row)) {
+                    right_matched_[right_pos_] = true;
+                    Row merged = merge_rows(*left_current_row_, right_row);
+                    ++right_pos_;
+                    return merged;
+                }
+                ++right_pos_;
+            }
+            left_current_row_ = left_->Next();
+            right_pos_ = 0;
+        }
+        while (right_unmatched_pos_ < right_buffer_.size()) {
+            size_t pos = right_unmatched_pos_++;
+            if (!right_matched_[pos]) {
+                Row null_left(left_->GetOutputSchema().size(), Value{std::monostate{}});
+                return merge_rows(null_left, right_buffer_[pos]);
+            }
+        }
+        return std::nullopt;
+    }
+
+    // FULL OUTER
     while (left_current_row_.has_value()) {
         while (right_pos_ < right_buffer_.size()) {
             const Row& right_row = right_buffer_[right_pos_];
             if (evaluate_condition(*left_current_row_, right_row)) {
+                left_had_match_ = true;
+                right_matched_[right_pos_] = true;
                 Row merged = merge_rows(*left_current_row_, right_row);
                 ++right_pos_;
                 return merged;
             }
             ++right_pos_;
         }
+        if (!left_had_match_) {
+            Row null_right(right_->GetOutputSchema().size(), Value{std::monostate{}});
+            Row result = merge_rows(*left_current_row_, null_right);
+            left_current_row_ = left_->Next();
+            right_pos_ = 0;
+            left_had_match_ = false;
+            return result;
+        }
         left_current_row_ = left_->Next();
-        right_pos_ = 0; // reset right position for next left row
+        right_pos_ = 0;
+        left_had_match_ = false;
     }
-    return std::nullopt; // no more rows
+    while (right_unmatched_pos_ < right_buffer_.size()) {
+        size_t pos = right_unmatched_pos_++;
+        if (!right_matched_[pos]) {
+            Row null_left(left_->GetOutputSchema().size(), Value{std::monostate{}});
+            return merge_rows(null_left, right_buffer_[pos]);
+        }
+    }
+    return std::nullopt;
 }
 
 Row JoinOperator::merge_rows(const Row& left_row, const Row& right_row) const {
