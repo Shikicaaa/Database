@@ -75,4 +75,7 @@ add_executable (
 )
 
 
+find_library(READLINE_LIB readline REQUIRED)
+target_link_libraries(CMakeTarget PRIVATE ${READLINE_LIB})
+
 # TODO: Add tests and install targets if needed.
