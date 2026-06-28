@@ -12,7 +12,8 @@ public:
         std::unique_ptr<Operator> left, std::unique_ptr<Operator> right,
         const JoinCondition& condition,
         const std::string& left_alias  = "",
-        const std::string& right_alias = ""
+        const std::string& right_alias = "",
+        JoinType join_type = JoinType::INNER
     );
 
     void Init() override;
@@ -25,6 +26,7 @@ protected:
     JoinCondition condition_;
     std::string left_alias_;
     std::string right_alias_;
+    JoinType join_type_;
     std::vector<ColumnDefinition> output_schema_;
 
     Row merge_rows(const Row& left_row, const Row& right_row) const;
@@ -36,6 +38,10 @@ private:
     bool right_initialized_;
     std::vector<Row> right_buffer_;
     size_t right_pos_;
+
+    bool left_had_match_;
+    std::vector<bool> right_matched_;
+    size_t right_unmatched_pos_;
 };
 
 #endif // JOIN_OPERATOR_H

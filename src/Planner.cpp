@@ -46,7 +46,7 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
         std::unique_ptr<Operator> right_op = std::make_unique<SeqScanOperator>(right_table);
         current_op = std::make_unique<JoinOperator>(
             std::move(current_op), std::move(right_op), join.condition,
-            current_alias, join.right_alias);
+            current_alias, join.right_alias, join.type);
 
         current_alias = "";
     }
@@ -209,7 +209,7 @@ std::unique_ptr<Operator> Planner::create_physical_plan(std::unique_ptr<LogicalN
             auto right_child = create_physical_plan(std::move(j->children_[1]));
             return std::make_unique<JoinOperator>(
                 std::move(left_child), std::move(right_child),
-                j->condition_, j->left_alias_, j->right_alias_);
+                j->condition_, j->left_alias_, j->right_alias_, j->join_type_);
         }
 
         default:
