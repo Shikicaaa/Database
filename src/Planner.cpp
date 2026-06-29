@@ -39,14 +39,29 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
 
     if (stmt.joins.empty() && stmt.where_clause.has_value() &&
         stmt.where_clause->op == "=" &&
-        std::holds_alternative<int32_t>(stmt.where_clause->value))
+        (std::holds_alternative<int32_t>(stmt.where_clause->value) ||
+         std::holds_alternative<std::string>(stmt.where_clause->value)))
     {
         auto idx = catalog_.find_index_for_column(stmt.table_name, stmt.where_clause->column);
         if (idx.has_value()) {
             BTree* idx_btree = catalog_.get_index_btree(idx->index_name);
             if (idx_btree) {
-                int32_t val = std::get<int32_t>(stmt.where_clause->value);
-                current_op = std::make_unique<SecondaryIndexScanOperator>(left_table, idx_btree, val);
+                const auto& wc = stmt.where_clause.value();
+                uint32_t key;
+                std::string orig;
+                if (std::holds_alternative<int32_t>(wc.value)) {
+                    key  = static_cast<uint32_t>(std::get<int32_t>(wc.value));
+                    orig = "";
+                } else {
+                    orig = std::get<std::string>(wc.value);
+                    key  = Catalog::hash_varchar(orig);
+                }
+                int col_idx = -1;
+                const auto& cols = left_table->get_columns();
+                for (int i = 0; i < (int)cols.size(); i++)
+                    if (cols[i].name == wc.column) { col_idx = i; break; }
+                current_op = std::make_unique<SecondaryIndexScanOperator>(
+                    left_table, idx_btree, key, orig, col_idx);
                 where_handled = true;
             }
         }
@@ -134,13 +149,30 @@ std::unique_ptr<LogicalNode> Planner::optimize_select(std::unique_ptr<LogicalNod
         filter->where_clause_ = std::nullopt;
     } else if (filter->where_clause_.has_value() &&
                filter->where_clause_->op == "=" &&
-               std::holds_alternative<int32_t>(filter->where_clause_->value))
+               (std::holds_alternative<int32_t>(filter->where_clause_->value) ||
+                std::holds_alternative<std::string>(filter->where_clause_->value)))
     {
         auto idx = catalog_.find_index_for_column(scan->table_name_, filter->where_clause_->column);
         if (idx.has_value()) {
-            int32_t val = std::get<int32_t>(filter->where_clause_->value);
+            const auto& wc = filter->where_clause_.value();
+            uint32_t key;
+            std::string orig;
+            if (std::holds_alternative<int32_t>(wc.value)) {
+                key  = static_cast<uint32_t>(std::get<int32_t>(wc.value));
+                orig = "";
+            } else {
+                orig = std::get<std::string>(wc.value);
+                key  = Catalog::hash_varchar(orig);
+            }
+            Table* t = catalog_.get_table(scan->table_name_);
+            int col_idx = -1;
+            if (t) {
+                const auto& cols = t->get_columns();
+                for (int i = 0; i < (int)cols.size(); i++)
+                    if (cols[i].name == wc.column) { col_idx = i; break; }
+            }
             filter->children_[0] = std::make_unique<LogicalSecondaryIndexScan>(
-                scan->table_name_, idx->index_name, val);
+                scan->table_name_, idx->index_name, key, orig, col_idx);
             filter->where_clause_ = std::nullopt;
         }
     }
@@ -240,7 +272,8 @@ std::unique_ptr<Operator> Planner::create_physical_plan(std::unique_ptr<LogicalN
             auto* si = static_cast<LogicalSecondaryIndexScan*>(node.get());
             Table* table = catalog_.get_table(si->table_name_);
             BTree* idx_btree = catalog_.get_index_btree(si->index_name_);
-            return std::make_unique<SecondaryIndexScanOperator>(table, idx_btree, si->search_value_);
+            return std::make_unique<SecondaryIndexScanOperator>(
+                table, idx_btree, si->index_key_, si->original_string_, si->column_index_);
         }
 
         case LogicalNodeType::JOIN: {

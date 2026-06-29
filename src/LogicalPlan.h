@@ -93,10 +93,14 @@ class LogicalSecondaryIndexScan : public LogicalNode {
 public:
     std::string table_name_;
     std::string index_name_;
-    int32_t     search_value_;
+    uint32_t index_key_;        // hashed/cast BTree lookup key
+    std::string original_string_;  // empty for INT, actual string for VARCHAR chain comparison
+    int column_index_;
 
-    LogicalSecondaryIndexScan(std::string table, std::string index, int32_t val)
-        : table_name_(std::move(table)), index_name_(std::move(index)), search_value_(val) {}
+    LogicalSecondaryIndexScan(std::string t, std::string i,
+                               uint32_t key, std::string orig, int col_idx)
+        : table_name_(std::move(t)), index_name_(std::move(i)),
+          index_key_(key), original_string_(std::move(orig)), column_index_(col_idx) {}
 
     LogicalNodeType GetType() const override { return LogicalNodeType::SECONDARY_INDEX_SCAN; }
 };

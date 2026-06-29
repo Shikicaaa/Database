@@ -102,18 +102,32 @@ std::optional<Row> UpdateOperator::Next() {
                 for (const auto& idx : indexes) {
                     for (size_t ci = 0; ci < cols.size(); ci++) {
                         if (cols[ci].name != idx.column_name) continue;
-                        bool old_ok = ci < old_row.size() && std::holds_alternative<int32_t>(old_row[ci]);
-                        bool new_ok = ci < new_row.size() && std::holds_alternative<int32_t>(new_row[ci]);
-                        if (!old_ok && !new_ok) break;
+                        bool old_int = ci < old_row.size() && std::holds_alternative<int32_t>(old_row[ci]);
+                        bool new_int = ci < new_row.size() && std::holds_alternative<int32_t>(new_row[ci]);
+                        bool old_str = ci < old_row.size() && std::holds_alternative<std::string>(old_row[ci]);
+                        bool new_str = ci < new_row.size() && std::holds_alternative<std::string>(new_row[ci]);
+                        if (!old_int && !new_int && !old_str && !new_str) break;
                         BTree* idx_btree = catalog_->get_index_btree(idx.index_name);
                         if (!idx_btree) break;
-                        if (old_ok) {
+                        // remove old entry
+                        if (old_int) {
                             uint32_t old_val = static_cast<uint32_t>(std::get<int32_t>(old_row[ci]));
                             idx_btree->remove(old_val, pk);
+                        } else if (old_str) {
+                            uint32_t old_key = Catalog::hash_varchar(std::get<std::string>(old_row[ci]));
+                            idx_btree->remove(old_key, pk);
                         }
-                        if (new_ok) {
+                        // insert new entry
+                        if (new_int) {
                             uint32_t new_val = static_cast<uint32_t>(std::get<int32_t>(new_row[ci]));
                             idx_btree->insert(new_val, pk, &pk, sizeof(uint32_t));
+                        } else if (new_str) {
+                            const std::string& s = std::get<std::string>(new_row[ci]);
+                            uint32_t new_key = Catalog::hash_varchar(s);
+                            std::vector<uint8_t> d;
+                            d.push_back(static_cast<uint8_t>(s.size()));
+                            d.insert(d.end(), s.begin(), s.end());
+                            idx_btree->insert(new_key, pk, d.data(), static_cast<uint16_t>(d.size()));
                         }
                         break;
                     }

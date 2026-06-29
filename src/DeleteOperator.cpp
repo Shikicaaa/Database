@@ -67,16 +67,17 @@ std::optional<Row> DeleteOperator::Next() {
                 const auto& cols = table_->get_columns();
                 for (const auto& idx : indexes) {
                     for (size_t ci = 0; ci < cols.size(); ci++) {
-                        if (cols[ci].name == idx.column_name &&
-                            ci < saved_row.size() &&
-                            std::holds_alternative<int32_t>(saved_row[ci])) {
-                            BTree* idx_btree = catalog_->get_index_btree(idx.index_name);
-                            if (idx_btree) {
-                                uint32_t col_val = static_cast<uint32_t>(std::get<int32_t>(saved_row[ci]));
-                                idx_btree->remove(col_val, pk);
-                            }
-                            break;
+                        if (cols[ci].name != idx.column_name || ci >= saved_row.size()) continue;
+                        BTree* idx_btree = catalog_->get_index_btree(idx.index_name);
+                        if (!idx_btree) break;
+                        if (std::holds_alternative<int32_t>(saved_row[ci])) {
+                            uint32_t col_val = static_cast<uint32_t>(std::get<int32_t>(saved_row[ci]));
+                            idx_btree->remove(col_val, pk);
+                        } else if (std::holds_alternative<std::string>(saved_row[ci])) {
+                            uint32_t col_key = Catalog::hash_varchar(std::get<std::string>(saved_row[ci]));
+                            idx_btree->remove(col_key, pk);
                         }
+                        break;
                     }
                 }
             }

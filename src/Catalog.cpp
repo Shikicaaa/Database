@@ -12,6 +12,13 @@ Catalog::Catalog(Pager& p) : pager(p) {
 }
 
 
+uint32_t Catalog::hash_varchar(const std::string& s) {
+    uint32_t h = 0;
+    for (char c : s)
+        h = h * 31 + static_cast<uint8_t>(c);
+    return h;
+}
+
 uint32_t Catalog::hash_table_name(const std::string& name) {
     uint32_t hash = 5381;
     for (char c : name) {
@@ -231,8 +238,10 @@ bool Catalog::create_secondary_index(const std::string& index_name,
         std::cerr << "CATALOG: Column '" << column_name << "' not found in table '" << table_name << "'.\n";
         return false;
     }
-    if (cols[col_idx].type != DataType::INT) {
-        std::cerr << "CATALOG: Secondary indexes only supported on INT columns.\n";
+    bool is_int = cols[col_idx].type == DataType::INT;
+    bool is_varchar = cols[col_idx].type == DataType::VARCHAR;
+    if (!is_int && !is_varchar) {
+        std::cerr << "CATALOG: Secondary indexes only supported on INT and VARCHAR columns.\n";
         return false;
     }
 
@@ -249,10 +258,18 @@ bool Catalog::create_secondary_index(const std::string& index_name,
     std::vector<Row> existing = table->scan_all();
     for (const Row& row : existing) {
         if ((int)row.size() <= col_idx) continue;
-        if (!std::holds_alternative<int32_t>(row[col_idx])) continue;
-        uint32_t col_val = static_cast<uint32_t>(std::get<int32_t>(row[col_idx]));
-        uint32_t pk      = table->extract_primary_key(row);
-        idx_btree->insert(col_val, pk, &pk, sizeof(uint32_t));
+        uint32_t pk = table->extract_primary_key(row);
+        if (is_int && std::holds_alternative<int32_t>(row[col_idx])) {
+            uint32_t col_val = static_cast<uint32_t>(std::get<int32_t>(row[col_idx]));
+            idx_btree->insert(col_val, pk, &pk, sizeof(uint32_t));
+        } else if (is_varchar && std::holds_alternative<std::string>(row[col_idx])) {
+            const std::string& s = std::get<std::string>(row[col_idx]);
+            uint32_t col_key = hash_varchar(s);
+            std::vector<uint8_t> chain_data;
+            chain_data.push_back(static_cast<uint8_t>(s.size()));
+            chain_data.insert(chain_data.end(), s.begin(), s.end());
+            idx_btree->insert(col_key, pk, chain_data.data(), static_cast<uint16_t>(chain_data.size()));
+        }
     }
 
     // Store the final root (may differ from idx_root after splits)

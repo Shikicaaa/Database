@@ -35,6 +35,9 @@ private:
     bool indexes_loaded_ = false;
 
     static uint32_t hash_table_name(const std::string& name);
+public:
+    static uint32_t hash_varchar(const std::string& s);
+private:
 
     // Catalog entry format:
     //   Table: [1B type=0x01][4B root_page_id][4B created_at][4B version][2B schema_size][schema][1B name_len][name]
