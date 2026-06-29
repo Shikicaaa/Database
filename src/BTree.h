@@ -26,6 +26,8 @@ public:
 
     // bool unique_check(uint32_t key, uint32_t row_id);
     
+    std::vector<uint32_t> find_range(uint32_t key);
+
     uint32_t get_root_page_id() const { return root_page_id; }
 
     Pager& get_pager() { return pager; }

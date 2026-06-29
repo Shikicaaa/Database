@@ -21,6 +21,8 @@ ExecutionResult Executor::execute(const Statement& stmt)
             return execute_delete(s);
         else if constexpr (std::is_same_v<T, CreateTableStatement>)
             return execute_create(s);
+        else if constexpr (std::is_same_v<T, CreateIndexStatement>)
+            return execute_create_index(s);
         else
             return {false, "Unknown statement type"};
     }, stmt);
@@ -38,6 +40,15 @@ ExecutionResult Executor::execute_create(const CreateTableStatement& stmt)
     }
 
     return {true, "Table '" + stmt.table_name + "' created successfully", {}, {}};
+}
+
+ExecutionResult Executor::execute_create_index(const CreateIndexStatement& stmt)
+{
+    bool ok = catalog_.create_secondary_index(stmt.index_name, stmt.table_name, stmt.column_name);
+    if (!ok) {
+        return {false, "Failed to create index '" + stmt.index_name + "'", {}, {}};
+    }
+    return {true, "Index '" + stmt.index_name + "' created on " + stmt.table_name + "(" + stmt.column_name + ")", {}, {}};
 }
 
 ExecutionResult Executor::execute_insert(const InsertStatement& stmt)

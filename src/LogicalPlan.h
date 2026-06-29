@@ -13,6 +13,7 @@ enum class LogicalNodeType {
     FILTER,
     PROJECT,
     INDEX_SCAN,
+    SECONDARY_INDEX_SCAN,
     JOIN
 };
 
@@ -84,6 +85,18 @@ public:
 
     LogicalIndexScan(const std::string& table_name, uint32_t pk_val)
         : table_name_(table_name), primary_key_value_(pk_val) {}
-    
+
     LogicalNodeType GetType() const override { return LogicalNodeType::INDEX_SCAN; }
+};
+
+class LogicalSecondaryIndexScan : public LogicalNode {
+public:
+    std::string table_name_;
+    std::string index_name_;
+    int32_t     search_value_;
+
+    LogicalSecondaryIndexScan(std::string table, std::string index, int32_t val)
+        : table_name_(std::move(table)), index_name_(std::move(index)), search_value_(val) {}
+
+    LogicalNodeType GetType() const override { return LogicalNodeType::SECONDARY_INDEX_SCAN; }
 };

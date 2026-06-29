@@ -6,6 +6,8 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 static void print_result(const ExecutionResult& result)
 {
@@ -105,12 +107,15 @@ int main()
     std::cout << "Type 'exit' or 'quit' to close.\n\n";
 
     std::string input;
-    std::string line;
 
     while (true) {
-        std::cout << (input.empty() ? "ShikiQL> " : "  -> ");
-        
-        if (!std::getline(std::cin, line)) break; //EOF
+        const char* prompt = input.empty() ? "ShikiQL> " : "  -> ";
+        char* raw = readline(prompt);
+
+        if (!raw) break; // EOF (Ctrl-D)
+
+        std::string line(raw);
+        free(raw);
 
         size_t start = line.find_first_not_of(" \t");
         if (start == std::string::npos) continue;
@@ -120,6 +125,9 @@ int main()
             std::cout << "NA SPAVANJE!\n";
             break;
         }
+
+        if (!line.empty())
+            add_history(line.c_str());
 
         input += " " + line;
 

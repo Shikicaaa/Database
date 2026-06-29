@@ -50,6 +50,26 @@ std::optional<Row> InsertOperator::Next() {
             std::cerr << "ERROR: Failed to insert row into table '" << table_->get_columns()[0].name << "'\n";
         } else {
             row_count++;
+            // Maintain secondary indexes
+            if (catalog_) {
+                auto indexes = catalog_->get_indexes_for_table(table_->get_name());
+                const auto& cols = table_->get_columns();
+                for (const auto& idx : indexes) {
+                    // find column index in schema
+                    for (size_t ci = 0; ci < cols.size(); ci++) {
+                        if (cols[ci].name == idx.column_name &&
+                            std::holds_alternative<int32_t>(coerced[ci])) {
+                            BTree* idx_btree = catalog_->get_index_btree(idx.index_name);
+                            if (idx_btree) {
+                                uint32_t col_val = static_cast<uint32_t>(std::get<int32_t>(coerced[ci]));
+                                uint32_t pk      = table_->extract_primary_key(coerced);
+                                idx_btree->insert(col_val, pk, &pk, sizeof(uint32_t));
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
         }
         row = child_->Next();
     }

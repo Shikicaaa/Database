@@ -1,5 +1,6 @@
 #include "Planner.h"
 #include "IndexScanOperator.h"
+#include "SecondaryIndexScanOperator.h"
 #include "SeqScanOperator.h"
 #include "FilterOperator.h"
 #include "ProjectOperator.h"
@@ -33,7 +34,27 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
         throw std::runtime_error("Table '" + stmt.table_name + "' does not exist");
     }
 
-    std::unique_ptr<Operator> current_op = std::make_unique<SeqScanOperator>(left_table);
+    std::unique_ptr<Operator> current_op;
+    bool where_handled = false;
+
+    if (stmt.joins.empty() && stmt.where_clause.has_value() &&
+        stmt.where_clause->op == "=" &&
+        std::holds_alternative<int32_t>(stmt.where_clause->value))
+    {
+        auto idx = catalog_.find_index_for_column(stmt.table_name, stmt.where_clause->column);
+        if (idx.has_value()) {
+            BTree* idx_btree = catalog_.get_index_btree(idx->index_name);
+            if (idx_btree) {
+                int32_t val = std::get<int32_t>(stmt.where_clause->value);
+                current_op = std::make_unique<SecondaryIndexScanOperator>(left_table, idx_btree, val);
+                where_handled = true;
+            }
+        }
+    }
+
+    if (!current_op) {
+        current_op = std::make_unique<SeqScanOperator>(left_table);
+    }
 
     std::string current_alias = stmt.table_alias;
 
@@ -46,12 +67,12 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
         std::unique_ptr<Operator> right_op = std::make_unique<SeqScanOperator>(right_table);
         current_op = std::make_unique<JoinOperator>(
             std::move(current_op), std::move(right_op), join.condition,
-            current_alias, join.right_alias);
+            current_alias, join.right_alias, join.type);
 
         current_alias = "";
     }
 
-    if (stmt.where_clause.has_value()) {
+    if (!where_handled && stmt.where_clause.has_value()) {
         current_op = std::make_unique<FilterOperator>(std::move(current_op), stmt.where_clause);
     }
 
@@ -108,9 +129,20 @@ std::unique_ptr<LogicalNode> Planner::optimize_select(std::unique_ptr<LogicalNod
     }
 
     std::optional<uint32_t> pk = try_extract_pk_from_where(filter->where_clause_, table->get_columns());
-    if(pk.has_value()){
-        filter->children_[0] = std::make_unique<LogicalIndexScan>(scan->table_name_,pk.value());
+    if (pk.has_value()) {
+        filter->children_[0] = std::make_unique<LogicalIndexScan>(scan->table_name_, pk.value());
         filter->where_clause_ = std::nullopt;
+    } else if (filter->where_clause_.has_value() &&
+               filter->where_clause_->op == "=" &&
+               std::holds_alternative<int32_t>(filter->where_clause_->value))
+    {
+        auto idx = catalog_.find_index_for_column(scan->table_name_, filter->where_clause_->column);
+        if (idx.has_value()) {
+            int32_t val = std::get<int32_t>(filter->where_clause_->value);
+            filter->children_[0] = std::make_unique<LogicalSecondaryIndexScan>(
+                scan->table_name_, idx->index_name, val);
+            filter->where_clause_ = std::nullopt;
+        }
     }
 
     return plan;
@@ -203,13 +235,21 @@ std::unique_ptr<Operator> Planner::create_physical_plan(std::unique_ptr<LogicalN
             Table* table = catalog_.get_table(i->table_name_);
             return std::make_unique<IndexScanOperator>(table, i->primary_key_value_);
         }
+
+        case LogicalNodeType::SECONDARY_INDEX_SCAN: {
+            auto* si = static_cast<LogicalSecondaryIndexScan*>(node.get());
+            Table* table = catalog_.get_table(si->table_name_);
+            BTree* idx_btree = catalog_.get_index_btree(si->index_name_);
+            return std::make_unique<SecondaryIndexScanOperator>(table, idx_btree, si->search_value_);
+        }
+
         case LogicalNodeType::JOIN: {
             auto* j = static_cast<LogicalJoin*>(node.get());
             auto left_child = create_physical_plan(std::move(j->children_[0]));
             auto right_child = create_physical_plan(std::move(j->children_[1]));
             return std::make_unique<JoinOperator>(
                 std::move(left_child), std::move(right_child),
-                j->condition_, j->left_alias_, j->right_alias_);
+                j->condition_, j->left_alias_, j->right_alias_, j->join_type_);
         }
 
         default:

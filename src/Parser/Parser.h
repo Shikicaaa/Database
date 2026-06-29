@@ -60,6 +60,12 @@ struct CreateTableStatement
     std::vector<ColumnDefinition> columns; // column name and type
 };
 
+struct CreateIndexStatement
+{
+    std::string index_name;
+    std::string table_name;
+    std::string column_name;
+};
 
 struct TableReference {
     std::string table_name;
@@ -73,6 +79,7 @@ using Statement = std::variant<
     UpdateStatement,
     DeleteStatement,
     CreateTableStatement,
+    CreateIndexStatement,
     JoinStatement
 >;
 
@@ -98,7 +105,7 @@ private:
     InsertStatement parse_insert();
     UpdateStatement parse_update();
     DeleteStatement parse_delete();
-    CreateTableStatement parse_create_table();
+    Statement parse_create();
     JoinStatement parse_join();
     WhereClause parse_where();
     Value parse_value();

@@ -237,6 +237,7 @@ TokenType Lexer::keyword_to_identifier(const std::string& upper)
     if(upper == "OUTER") return TokenType::OUTER;
     if(upper == "ON") return TokenType::ON;
     if(upper == "REFERENCES") return TokenType::REFERENCES;
+    if(upper == "INDEX") return TokenType::INDEX;
 
     return TokenType::IDENTIFIER;
 }

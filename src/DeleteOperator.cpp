@@ -19,13 +19,14 @@ std::optional<Row> DeleteOperator::Next() {
         return std::nullopt;
     }
 
-    std::vector<uint32_t> pks;
+    std::vector<std::pair<uint32_t, Row>> pk_rows;
     for (auto row = child_->Next(); row.has_value(); row = child_->Next()) {
-        pks.push_back(table_->extract_primary_key(row.value()));
+        uint32_t pk = table_->extract_primary_key(row.value());
+        pk_rows.push_back({pk, row.value()});
     }
 
     int delete_count = 0;
-    for (uint32_t pk : pks) {
+    for (auto& [pk, saved_row] : pk_rows) {
         // reject delete if any child table still references this PK
         if (catalog_) {
             Value pk_val = Value(static_cast<int32_t>(pk));
@@ -34,7 +35,6 @@ std::optional<Row> DeleteOperator::Next() {
             for (const auto& ref : refs) {
                 Table* child_tbl = catalog_->get_table(ref.child_table);
                 if (!child_tbl) continue;
-                // Scan child table rows and check if any rows FK column matches pk
                 std::vector<Row> child_rows = child_tbl->scan_all();
                 const auto& child_cols = child_tbl->get_columns();
                 for (const auto& crow : child_rows) {
@@ -61,6 +61,25 @@ std::optional<Row> DeleteOperator::Next() {
                       << " from table '" << table_->get_name() << "'\n";
         } else {
             delete_count++;
+            // Remove from secondary indexes
+            if (catalog_) {
+                auto indexes = catalog_->get_indexes_for_table(table_->get_name());
+                const auto& cols = table_->get_columns();
+                for (const auto& idx : indexes) {
+                    for (size_t ci = 0; ci < cols.size(); ci++) {
+                        if (cols[ci].name == idx.column_name &&
+                            ci < saved_row.size() &&
+                            std::holds_alternative<int32_t>(saved_row[ci])) {
+                            BTree* idx_btree = catalog_->get_index_btree(idx.index_name);
+                            if (idx_btree) {
+                                uint32_t col_val = static_cast<uint32_t>(std::get<int32_t>(saved_row[ci]));
+                                idx_btree->remove(col_val, pk);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
 

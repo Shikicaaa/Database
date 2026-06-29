@@ -71,8 +71,13 @@ add_executable (
   "src/Planner.cpp"
   "src/LogicalPlan.h"
   "src/JoinOperator.h"
-  "src/JoinOperator.cpp"    
+  "src/JoinOperator.cpp"
+  "src/SecondaryIndexScanOperator.h"
+  "src/SecondaryIndexScanOperator.cpp"
 )
 
+
+find_library(READLINE_LIB readline REQUIRED)
+target_link_libraries(CMakeTarget PRIVATE ${READLINE_LIB})
 
 # TODO: Add tests and install targets if needed.

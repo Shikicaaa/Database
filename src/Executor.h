@@ -26,8 +26,9 @@ private:
     ExecutionResult execute_update(const UpdateStatement& stmt);
     ExecutionResult execute_delete(const DeleteStatement& stmt);
     ExecutionResult execute_create(const CreateTableStatement& stmt);
-    
-    // try_extract_pk_from_where je ostavljen u Executoru jer je vrlo koristan 
+    ExecutionResult execute_create_index(const CreateIndexStatement& stmt);
+
+    // try_extract_pk_from_where je ostavljen u Executoru jer je vrlo koristan
     // za Planner da prepozna da li da kreira IndexScan umesto SeqScan + Filter.
     // Iako sada ne koristimo IndexScan, ostavljen je za buduca prosirenja.
     std::optional<uint32_t> try_extract_pk_from_where(
