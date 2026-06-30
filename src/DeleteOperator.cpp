@@ -1,4 +1,5 @@
 #include "DeleteOperator.h"
+#include <cstring>
 
 DeleteOperator::DeleteOperator(std::unique_ptr<Operator> child, Table* table, Catalog* catalog)
     : child_(std::move(child)), table_(table), catalog_(catalog) {
@@ -75,6 +76,12 @@ std::optional<Row> DeleteOperator::Next() {
                             idx_btree->remove(col_val, pk);
                         } else if (std::holds_alternative<std::string>(saved_row[ci])) {
                             uint32_t col_key = Catalog::hash_varchar(std::get<std::string>(saved_row[ci]));
+                            idx_btree->remove(col_key, pk);
+                        } else if (std::holds_alternative<double>(saved_row[ci])) {
+                            uint32_t col_key = Catalog::hash_number(std::get<double>(saved_row[ci]));
+                            idx_btree->remove(col_key, pk);
+                        } else if (std::holds_alternative<DateTime>(saved_row[ci])) {
+                            uint32_t col_key = Catalog::hash_datetime(std::get<DateTime>(saved_row[ci]));
                             idx_btree->remove(col_key, pk);
                         }
                         break;

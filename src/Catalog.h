@@ -37,6 +37,8 @@ private:
     static uint32_t hash_table_name(const std::string& name);
 public:
     static uint32_t hash_varchar(const std::string& s);
+    static uint32_t hash_number(double v);
+    static uint32_t hash_datetime(const DateTime& dt);
 private:
 
     // Catalog entry format:

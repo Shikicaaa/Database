@@ -1,6 +1,7 @@
 #include "UpdateOperator.h"
 #include "TypeCoercion.h"
 #include <algorithm>
+#include <cstring>
 
 UpdateOperator::UpdateOperator(std::unique_ptr<Operator> child, Table* table, const std::vector<std::pair<std::string, Value>>& set_clauses, Catalog* catalog) 
     : child_(std::move(child)), table_(table),  set_clauses_(set_clauses), catalog_(catalog) {
@@ -106,7 +107,12 @@ std::optional<Row> UpdateOperator::Next() {
                         bool new_int = ci < new_row.size() && std::holds_alternative<int32_t>(new_row[ci]);
                         bool old_str = ci < old_row.size() && std::holds_alternative<std::string>(old_row[ci]);
                         bool new_str = ci < new_row.size() && std::holds_alternative<std::string>(new_row[ci]);
-                        if (!old_int && !new_int && !old_str && !new_str) break;
+                        bool old_num = ci < old_row.size() && std::holds_alternative<double>(old_row[ci]);
+                        bool new_num = ci < new_row.size() && std::holds_alternative<double>(new_row[ci]);
+                        bool old_dt = ci < old_row.size() && std::holds_alternative<DateTime>(old_row[ci]);
+                        bool new_dt = ci < new_row.size() && std::holds_alternative<DateTime>(new_row[ci]);
+                        if (!old_int && !new_int && !old_str && !new_str &&
+                            !old_num && !new_num && !old_dt && !new_dt) break;
                         BTree* idx_btree = catalog_->get_index_btree(idx.index_name);
                         if (!idx_btree) break;
                         // remove old entry
@@ -115,6 +121,12 @@ std::optional<Row> UpdateOperator::Next() {
                             idx_btree->remove(old_val, pk);
                         } else if (old_str) {
                             uint32_t old_key = Catalog::hash_varchar(std::get<std::string>(old_row[ci]));
+                            idx_btree->remove(old_key, pk);
+                        } else if (old_num) {
+                            uint32_t old_key = Catalog::hash_number(std::get<double>(old_row[ci]));
+                            idx_btree->remove(old_key, pk);
+                        } else if (old_dt) {
+                            uint32_t old_key = Catalog::hash_datetime(std::get<DateTime>(old_row[ci]));
                             idx_btree->remove(old_key, pk);
                         }
                         // insert new entry
@@ -127,6 +139,21 @@ std::optional<Row> UpdateOperator::Next() {
                             std::vector<uint8_t> d;
                             d.push_back(static_cast<uint8_t>(s.size()));
                             d.insert(d.end(), s.begin(), s.end());
+                            idx_btree->insert(new_key, pk, d.data(), static_cast<uint16_t>(d.size()));
+                        } else if (new_num) {
+                            double v = std::get<double>(new_row[ci]);
+                            uint32_t new_key = Catalog::hash_number(v);
+                            std::vector<uint8_t> d(8);
+                            std::memcpy(d.data(), &v, 8);
+                            idx_btree->insert(new_key, pk, d.data(), 8);
+                        } else if (new_dt) {
+                            const DateTime& dt = std::get<DateTime>(new_row[ci]);
+                            uint32_t new_key = Catalog::hash_datetime(dt);
+                            std::vector<uint8_t> d = {
+                                static_cast<uint8_t>(dt.year & 0xFF),
+                                static_cast<uint8_t>((dt.year >> 8) & 0xFF),
+                                dt.month, dt.day, dt.hour, dt.minute, dt.second
+                            };
                             idx_btree->insert(new_key, pk, d.data(), static_cast<uint16_t>(d.size()));
                         }
                         break;

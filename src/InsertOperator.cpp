@@ -1,5 +1,6 @@
 #include "InsertOperator.h"
 #include "TypeCoercion.h"
+#include <cstring>
 
 InsertOperator::InsertOperator(Table* table, std::unique_ptr<Operator> child, Catalog* catalog)
     : table_(table), child_(std::move(child)), catalog_(catalog), has_executed_(false) 
@@ -59,15 +60,35 @@ std::optional<Row> InsertOperator::Next() {
                         BTree* idx_btree = catalog_->get_index_btree(idx.index_name);
                         if (!idx_btree) break;
                         uint32_t pk = table_->extract_primary_key(coerced);
+                           // INT
                         if (std::holds_alternative<int32_t>(coerced[ci])) {
                             uint32_t col_val = static_cast<uint32_t>(std::get<int32_t>(coerced[ci]));
                             idx_btree->insert(col_val, pk, &pk, sizeof(uint32_t));
+                            // VARCHAR
                         } else if (std::holds_alternative<std::string>(coerced[ci])) {
                             const std::string& s = std::get<std::string>(coerced[ci]);
                             uint32_t col_key = Catalog::hash_varchar(s);
                             std::vector<uint8_t> d;
                             d.push_back(static_cast<uint8_t>(s.size()));
                             d.insert(d.end(), s.begin(), s.end());
+                            idx_btree->insert(col_key, pk, d.data(), static_cast<uint16_t>(d.size()));
+                            // NUMBER
+                        } else if (std::holds_alternative<double>(coerced[ci])) {
+                            double v = std::get<double>(coerced[ci]);
+                            uint32_t col_key = Catalog::hash_number(v);
+                            std::vector<uint8_t> d(8);
+                            std::memcpy(d.data(), &v, 8);
+                            idx_btree->insert(col_key, pk, d.data(), 8);
+                        
+                            // DATETIME
+                        } else if (std::holds_alternative<DateTime>(coerced[ci])) {
+                            const DateTime& dt = std::get<DateTime>(coerced[ci]);
+                            uint32_t col_key = Catalog::hash_datetime(dt);
+                            std::vector<uint8_t> d = {
+                                static_cast<uint8_t>(dt.year & 0xFF),
+                                static_cast<uint8_t>((dt.year >> 8) & 0xFF),
+                                dt.month, dt.day, dt.hour, dt.minute, dt.second
+                            };
                             idx_btree->insert(col_key, pk, d.data(), static_cast<uint16_t>(d.size()));
                         }
                         break;

@@ -2,6 +2,7 @@
 #include "SlottedPage.h"
 #include <iostream>
 #include <optional>
+#include <cstring>
 
 static const uint8_t ENTRY_TYPE_TABLE = 0x01;
 static const uint8_t ENTRY_TYPE_INDEX = 0x02;
@@ -16,6 +17,22 @@ uint32_t Catalog::hash_varchar(const std::string& s) {
     uint32_t h = 0;
     for (char c : s)
         h = h * 31 + static_cast<uint8_t>(c);
+    return h;
+}
+
+uint32_t Catalog::hash_number(double v) {
+    uint64_t bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    return static_cast<uint32_t>(bits ^ (bits >> 32));
+}
+
+uint32_t Catalog::hash_datetime(const DateTime& dt) {
+    uint32_t h = 0;
+    auto feed = [&](uint8_t b) { h = h * 31 + b; };
+    feed(static_cast<uint8_t>(dt.year & 0xFF));
+    feed(static_cast<uint8_t>((dt.year >> 8) & 0xFF));
+    feed(dt.month); feed(dt.day);
+    feed(dt.hour);  feed(dt.minute); feed(dt.second);
     return h;
 }
 
@@ -240,8 +257,10 @@ bool Catalog::create_secondary_index(const std::string& index_name,
     }
     bool is_int = cols[col_idx].type == DataType::INT;
     bool is_varchar = cols[col_idx].type == DataType::VARCHAR;
-    if (!is_int && !is_varchar) {
-        std::cerr << "CATALOG: Secondary indexes only supported on INT and VARCHAR columns.\n";
+    bool is_number = cols[col_idx].type == DataType::NUMBER;
+    bool is_datetime = cols[col_idx].type == DataType::DATE;
+    if (!is_int && !is_varchar && !is_number && !is_datetime) {
+        std::cerr << "CATALOG: Secondary indexes not supported on this column type.\n";
         return false;
     }
 
@@ -269,13 +288,26 @@ bool Catalog::create_secondary_index(const std::string& index_name,
             chain_data.push_back(static_cast<uint8_t>(s.size()));
             chain_data.insert(chain_data.end(), s.begin(), s.end());
             idx_btree->insert(col_key, pk, chain_data.data(), static_cast<uint16_t>(chain_data.size()));
+        } else if (is_number && std::holds_alternative<double>(row[col_idx])) {
+            double v = std::get<double>(row[col_idx]);
+            uint32_t col_key = hash_number(v);
+            std::vector<uint8_t> d(8);
+            std::memcpy(d.data(), &v, 8);
+            idx_btree->insert(col_key, pk, d.data(), 8);
+        } else if (is_datetime && std::holds_alternative<DateTime>(row[col_idx])) {
+            const DateTime& dt = std::get<DateTime>(row[col_idx]);
+            uint32_t col_key = hash_datetime(dt);
+            std::vector<uint8_t> d = {
+                static_cast<uint8_t>(dt.year & 0xFF),
+                static_cast<uint8_t>((dt.year >> 8) & 0xFF),
+                dt.month, dt.day, dt.hour, dt.minute, dt.second
+            };
+            idx_btree->insert(col_key, pk, d.data(), static_cast<uint16_t>(d.size()));
         }
     }
 
-    // Store the final root (may differ from idx_root after splits)
     uint32_t final_root = idx_btree->get_root_page_id();
 
-    // Write index metadata to catalog BTree
     std::vector<uint8_t> entry = serialize_index_entry(final_root, table_name, column_name, index_name);
     uint32_t key = hash_table_name("__idx__" + index_name);
     if (!catalog_btree->insert(key, 0, entry.data(), static_cast<uint16_t>(entry.size()))) {
@@ -491,6 +523,9 @@ std::vector<FKReference> Catalog::get_referencing_tables(const std::string &pare
                 const char* data_ptr = page->data + pointers[i] + LEAF_CELL_HEADER_SIZE;
                 raw_data.assign(data_ptr, data_ptr + leaf_ch->data_size);
             }
+
+            // Skip index entries (0x02) — they live in the same BTree but are not table entries
+            if (!raw_data.empty() && static_cast<uint8_t>(raw_data[0]) != ENTRY_TYPE_TABLE) continue;
 
             uint32_t root_page_id, created_at, version;
             std::vector<ColumnDefinition> schema;
