@@ -1,12 +1,40 @@
 #include "Catalog.h"
 #include "SlottedPage.h"
 #include <iostream>
+#include <optional>
+#include <cstring>
+
+static const uint8_t ENTRY_TYPE_TABLE = 0x01;
+static const uint8_t ENTRY_TYPE_INDEX = 0x02;
 
 Catalog::Catalog(Pager& p) : pager(p) {
     uint32_t catalog_root = p.get_catalog_root_page_id();
     catalog_btree = std::make_unique<BTree>(p, catalog_root, true);
 }
 
+
+uint32_t Catalog::hash_varchar(const std::string& s) {
+    uint32_t h = 0;
+    for (char c : s)
+        h = h * 31 + static_cast<uint8_t>(c);
+    return h;
+}
+
+uint32_t Catalog::hash_number(double v) {
+    uint64_t bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    return static_cast<uint32_t>(bits ^ (bits >> 32));
+}
+
+uint32_t Catalog::hash_datetime(const DateTime& dt) {
+    uint32_t h = 0;
+    auto feed = [&](uint8_t b) { h = h * 31 + b; };
+    feed(static_cast<uint8_t>(dt.year & 0xFF));
+    feed(static_cast<uint8_t>((dt.year >> 8) & 0xFF));
+    feed(dt.month); feed(dt.day);
+    feed(dt.hour);  feed(dt.minute); feed(dt.second);
+    return h;
+}
 
 uint32_t Catalog::hash_table_name(const std::string& name) {
     uint32_t hash = 5381;
@@ -22,7 +50,10 @@ std::vector<uint8_t> Catalog::serialize_catalog_entry(
     const std::string& table_name)
 {
     std::vector<uint8_t> buffer;
-    
+
+    // type byte
+    buffer.push_back(ENTRY_TYPE_TABLE);
+
     // root_page_id 4B
     buffer.push_back((root_page_id >> 24) & 0xFF);
     buffer.push_back((root_page_id >> 16) & 0xFF);
@@ -63,11 +94,14 @@ bool Catalog::deserialize_catalog_entry(
     std::vector<ColumnDefinition>& schema,
     std::string& table_name)
 {
-    if (data.size() < 14) return false; // minimum: 4+4+4+2 bytes
+    if (data.size() < 15) return false; // minimum: 1(type) + 4+4+4+2 bytes
 
     const uint8_t* base = reinterpret_cast<const uint8_t*>(data.data());
     const uint8_t* ptr  = base;
     const uint8_t* end  = base + data.size();
+
+    // type byte — must be a table entry
+    if (*ptr++ != ENTRY_TYPE_TABLE) return false;
 
     root_page_id = (static_cast<uint32_t>(ptr[0]) << 24) |
                    (static_cast<uint32_t>(ptr[1]) << 16) |
@@ -106,6 +140,223 @@ bool Catalog::deserialize_catalog_entry(
     }
 
     return true;
+}
+
+std::vector<uint8_t> Catalog::serialize_index_entry(
+    uint32_t root_page_id,
+    const std::string& table_name,
+    const std::string& column_name,
+    const std::string& index_name)
+{
+    std::vector<uint8_t> buf;
+    buf.push_back(ENTRY_TYPE_INDEX);
+
+    buf.push_back((root_page_id >> 24) & 0xFF);
+    buf.push_back((root_page_id >> 16) & 0xFF);
+    buf.push_back((root_page_id >> 8)  & 0xFF);
+    buf.push_back(root_page_id         & 0xFF);
+
+    auto push_str = [&](const std::string& s) {
+        buf.push_back(static_cast<uint8_t>(s.size()));
+        buf.insert(buf.end(), s.begin(), s.end());
+    };
+    push_str(table_name);
+    push_str(column_name);
+    push_str(index_name);
+    return buf;
+}
+
+bool Catalog::deserialize_index_entry(
+    const std::vector<char>& data,
+    uint32_t& root_page_id,
+    std::string& table_name,
+    std::string& column_name,
+    std::string& index_name)
+{
+    if (data.size() < 6) return false;
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(data.data());
+    const uint8_t* end = ptr + data.size();
+
+    if (*ptr++ != ENTRY_TYPE_INDEX) return false;
+
+    root_page_id = (static_cast<uint32_t>(ptr[0]) << 24) |
+                   (static_cast<uint32_t>(ptr[1]) << 16) |
+                   (static_cast<uint32_t>(ptr[2]) << 8)  |
+                   static_cast<uint32_t>(ptr[3]);
+    ptr += 4;
+
+    auto read_str = [&](std::string& out) -> bool {
+        if (ptr >= end) return false;
+        uint8_t len = *ptr++;
+        if (ptr + len > end) return false;
+        out.assign(reinterpret_cast<const char*>(ptr), len);
+        ptr += len;
+        return true;
+    };
+    return read_str(table_name) && read_str(column_name) && read_str(index_name);
+}
+
+void Catalog::ensure_indexes_loaded() {
+    if (indexes_loaded_) return;
+    indexes_loaded_ = true;
+
+    uint32_t current_id = catalog_btree->find_first_leaf_node();
+
+    while (current_id != 0) {
+        Page* page = pager.get_page(current_id);
+        PageHeader* ph = reinterpret_cast<PageHeader*>(page->data);
+        SlottedPage sp(page->data);
+        uint16_t* pointers = sp.get_cell_pointers();
+
+        for (uint16_t i = 0; i < ph->num_cells; i++) {
+            LeafCellHeader* lch = reinterpret_cast<LeafCellHeader*>(page->data + pointers[i]);
+            if (lch->data_size == 0) continue;
+            const uint8_t* first_byte = reinterpret_cast<const uint8_t*>(
+                page->data + pointers[i] + LEAF_CELL_HEADER_SIZE);
+            if (*first_byte != ENTRY_TYPE_INDEX) continue;
+
+            std::vector<char> raw;
+            if (lch->flags & CELL_FLAG_OVERFLOW) {
+                uint32_t ovfl;
+                std::memcpy(&ovfl, page->data + pointers[i] + LEAF_CELL_HEADER_SIZE, sizeof(uint32_t));
+                raw = SlottedPage::read_from_overflow(ovfl, pager);
+            } else {
+                const char* dp = page->data + pointers[i] + LEAF_CELL_HEADER_SIZE;
+                raw.assign(dp, dp + lch->data_size);
+            }
+
+            IndexInfo info;
+            if (deserialize_index_entry(raw, info.root_page_id,
+                                        info.table_name, info.column_name, info.index_name)) {
+                loaded_indexes_.push_back(info);
+            }
+        }
+        current_id = ph->right_child_page_id;
+    }
+}
+
+bool Catalog::create_secondary_index(const std::string& index_name,
+                                      const std::string& table_name,
+                                      const std::string& column_name)
+{
+    Table* table = get_table(table_name);
+    if (!table) {
+        std::cerr << "CATALOG: Table '" << table_name << "' not found for index creation.\n";
+        return false;
+    }
+
+    // Validate column exists and is INT
+    const auto& cols = table->get_columns();
+    int col_idx = -1;
+    for (int i = 0; i < (int)cols.size(); i++) {
+        if (cols[i].name == column_name) { col_idx = i; break; }
+    }
+    if (col_idx == -1) {
+        std::cerr << "CATALOG: Column '" << column_name << "' not found in table '" << table_name << "'.\n";
+        return false;
+    }
+    bool is_int = cols[col_idx].type == DataType::INT;
+    bool is_varchar = cols[col_idx].type == DataType::VARCHAR;
+    bool is_number = cols[col_idx].type == DataType::NUMBER;
+    bool is_datetime = cols[col_idx].type == DataType::DATE;
+    if (!is_int && !is_varchar && !is_number && !is_datetime) {
+        std::cerr << "CATALOG: Secondary indexes not supported on this column type.\n";
+        return false;
+    }
+
+    // Allocate and initialize a new BTree for the index
+    uint32_t idx_root = pager.allocate_new_page();
+    Page* idx_page = pager.get_page(idx_root);
+    SlottedPage idx_sp(idx_page->data);
+    idx_sp.init_as_leaf_node(true);
+    idx_page->is_dirty = true;
+
+    auto idx_btree = std::make_unique<BTree>(pager, idx_root, false);
+
+    // Populate index from existing rows
+    std::vector<Row> existing = table->scan_all();
+    for (const Row& row : existing) {
+        if ((int)row.size() <= col_idx) continue;
+        uint32_t pk = table->extract_primary_key(row);
+        if (is_int && std::holds_alternative<int32_t>(row[col_idx])) {
+            uint32_t col_val = static_cast<uint32_t>(std::get<int32_t>(row[col_idx]));
+            idx_btree->insert(col_val, pk, &pk, sizeof(uint32_t));
+        } else if (is_varchar && std::holds_alternative<std::string>(row[col_idx])) {
+            const std::string& s = std::get<std::string>(row[col_idx]);
+            uint32_t col_key = hash_varchar(s);
+            std::vector<uint8_t> chain_data;
+            chain_data.push_back(static_cast<uint8_t>(s.size()));
+            chain_data.insert(chain_data.end(), s.begin(), s.end());
+            idx_btree->insert(col_key, pk, chain_data.data(), static_cast<uint16_t>(chain_data.size()));
+        } else if (is_number && std::holds_alternative<double>(row[col_idx])) {
+            double v = std::get<double>(row[col_idx]);
+            uint32_t col_key = hash_number(v);
+            std::vector<uint8_t> d(8);
+            std::memcpy(d.data(), &v, 8);
+            idx_btree->insert(col_key, pk, d.data(), 8);
+        } else if (is_datetime && std::holds_alternative<DateTime>(row[col_idx])) {
+            const DateTime& dt = std::get<DateTime>(row[col_idx]);
+            uint32_t col_key = hash_datetime(dt);
+            std::vector<uint8_t> d = {
+                static_cast<uint8_t>(dt.year & 0xFF),
+                static_cast<uint8_t>((dt.year >> 8) & 0xFF),
+                dt.month, dt.day, dt.hour, dt.minute, dt.second
+            };
+            idx_btree->insert(col_key, pk, d.data(), static_cast<uint16_t>(d.size()));
+        }
+    }
+
+    uint32_t final_root = idx_btree->get_root_page_id();
+
+    std::vector<uint8_t> entry = serialize_index_entry(final_root, table_name, column_name, index_name);
+    uint32_t key = hash_table_name("__idx__" + index_name);
+    if (!catalog_btree->insert(key, 0, entry.data(), static_cast<uint16_t>(entry.size()))) {
+        std::cerr << "CATALOG: Failed to insert index '" << index_name << "' into catalog.\n";
+        return false;
+    }
+
+    // Cache
+    index_btrees_cache_[index_name] = std::move(idx_btree);
+    loaded_indexes_.push_back({index_name, table_name, column_name, final_root});
+
+    std::cout << "CATALOG: Created index '" << index_name << "' on " << table_name << "." << column_name << "\n";
+    return true;
+}
+
+BTree* Catalog::get_index_btree(const std::string& index_name) {
+    auto it = index_btrees_cache_.find(index_name);
+    if (it != index_btrees_cache_.end()) return it->second.get();
+
+    ensure_indexes_loaded();
+    for (const auto& info : loaded_indexes_) {
+        if (info.index_name == index_name) {
+            auto btree = std::make_unique<BTree>(pager, info.root_page_id, false);
+            BTree* ptr = btree.get();
+            index_btrees_cache_[index_name] = std::move(btree);
+            return ptr;
+        }
+    }
+    return nullptr;
+}
+
+std::optional<IndexInfo> Catalog::find_index_for_column(const std::string& table_name,
+                                                          const std::string& column_name)
+{
+    ensure_indexes_loaded();
+    for (const auto& info : loaded_indexes_) {
+        if (info.table_name == table_name && info.column_name == column_name)
+            return info;
+    }
+    return std::nullopt;
+}
+
+std::vector<IndexInfo> Catalog::get_indexes_for_table(const std::string& table_name) {
+    ensure_indexes_loaded();
+    std::vector<IndexInfo> result;
+    for (const auto& info : loaded_indexes_) {
+        if (info.table_name == table_name) result.push_back(info);
+    }
+    return result;
 }
 
 bool Catalog::create_table(const std::string& name, const std::vector<ColumnDefinition>& cols) {
@@ -272,6 +523,9 @@ std::vector<FKReference> Catalog::get_referencing_tables(const std::string &pare
                 const char* data_ptr = page->data + pointers[i] + LEAF_CELL_HEADER_SIZE;
                 raw_data.assign(data_ptr, data_ptr + leaf_ch->data_size);
             }
+
+            // Skip index entries (0x02) — they live in the same BTree but are not table entries
+            if (!raw_data.empty() && static_cast<uint8_t>(raw_data[0]) != ENTRY_TYPE_TABLE) continue;
 
             uint32_t root_page_id, created_at, version;
             std::vector<ColumnDefinition> schema;

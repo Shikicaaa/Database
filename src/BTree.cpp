@@ -331,6 +331,70 @@ bool BTree::remove(uint32_t key, uint32_t row_id)
 }
 
 
+std::vector<uint32_t> BTree::find_range(uint32_t key) {
+    std::vector<uint32_t> results;
+    // Navigate to the leaf that would contain (key, 0)
+    uint32_t current_page_id = find_leaf_node(key, 0);
+
+    while (current_page_id != 0) {
+        Page* page = pager.get_page(current_page_id);
+        PageHeader* ph = reinterpret_cast<PageHeader*>(page->data);
+        SlottedPage sp(page->data);
+        uint16_t* pointers = sp.get_cell_pointers();
+
+        bool passed_key = false;
+        for (uint16_t i = 0; i < ph->num_cells; i++) {
+            LeafCellHeader* cell = reinterpret_cast<LeafCellHeader*>(page->data + pointers[i]);
+            if (cell->key == key) {
+                results.push_back(cell->row_id);
+            } else if (cell->key > key) {
+                passed_key = true;
+                break;
+            }
+        }
+        if (passed_key) break;
+        current_page_id = ph->right_child_page_id;
+    }
+    return results;
+}
+
+std::vector<BTree::ChainEntry> BTree::find_range_with_data(uint32_t key) {
+    std::vector<ChainEntry> results;
+    uint32_t current_page_id = find_leaf_node(key, 0);
+
+    while (current_page_id != 0) {
+        Page* page = pager.get_page(current_page_id);
+        PageHeader* ph = reinterpret_cast<PageHeader*>(page->data);
+        SlottedPage sp(page->data);
+        uint16_t* pointers = sp.get_cell_pointers();
+
+        bool passed_key = false;
+        for (uint16_t i = 0; i < ph->num_cells; i++) {
+            LeafCellHeader* cell = reinterpret_cast<LeafCellHeader*>(page->data + pointers[i]);
+            if (cell->key == key) {
+                ChainEntry e;
+                e.pk = cell->row_id;
+                if (cell->flags & CELL_FLAG_OVERFLOW) {
+                    uint32_t ovfl;
+                    std::memcpy(&ovfl, page->data + pointers[i] + LEAF_CELL_HEADER_SIZE, sizeof(uint32_t));
+                    auto raw = SlottedPage::read_from_overflow(ovfl, pager);
+                    e.data.assign(raw.begin(), raw.end());
+                } else {
+                    const char* dp = page->data + pointers[i] + LEAF_CELL_HEADER_SIZE;
+                    e.data.assign(dp, dp + cell->data_size);
+                }
+                results.push_back(std::move(e));
+            } else if (cell->key > key) {
+                passed_key = true;
+                break;
+            }
+        }
+        if (passed_key) break;
+        current_page_id = ph->right_child_page_id;
+    }
+    return results;
+}
+
 uint32_t BTree::find_first_leaf_node(){
     uint32_t current_page_id = root_page_id;
 

@@ -1,5 +1,6 @@
 #include "Planner.h"
 #include "IndexScanOperator.h"
+#include "SecondaryIndexScanOperator.h"
 #include "SeqScanOperator.h"
 #include "FilterOperator.h"
 #include "ProjectOperator.h"
@@ -8,7 +9,9 @@
 #include "UpdateOperator.h"
 #include "DeleteOperator.h"
 #include "LogicalPlan.h"
+#include "TypeCoercion.h"
 #include <variant>
+#include <cstring>
 
 std::unique_ptr<Operator> Planner::create_plan(const Statement& stmt) {
     return std::visit([this](const auto& s) -> std::unique_ptr<Operator> {
@@ -33,7 +36,72 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
         throw std::runtime_error("Table '" + stmt.table_name + "' does not exist");
     }
 
-    std::unique_ptr<Operator> current_op = std::make_unique<SeqScanOperator>(left_table);
+    std::unique_ptr<Operator> current_op;
+    bool where_handled = false;
+
+    if (stmt.joins.empty() && stmt.where_clause.has_value() &&
+        stmt.where_clause->op == "=" &&
+        !std::holds_alternative<std::monostate>(stmt.where_clause->value))
+    {
+        auto idx = catalog_.find_index_for_column(stmt.table_name, stmt.where_clause->column);
+        if (idx.has_value()) {
+            BTree* idx_btree = catalog_.get_index_btree(idx->index_name);
+            if (idx_btree) {
+                const auto& wc = stmt.where_clause.value();
+                const auto& cols = left_table->get_columns();
+                int col_idx = -1;
+                for (int i = 0; i < (int)cols.size(); i++)
+                    if (cols[i].name == wc.column) { col_idx = i; break; }
+
+                if (col_idx != -1) {
+                    Value cv = coerce_value(wc.value, cols[col_idx]);
+                    uint32_t key = 0;
+                    DataType col_type = DataType::INT;
+                    std::string orig_str;
+                    std::vector<uint8_t> orig_bytes;
+                    bool can_use_index = true;
+                    // INTEGER
+                    if (std::holds_alternative<int32_t>(cv)) {
+                        col_type = DataType::INT;
+                        key = static_cast<uint32_t>(std::get<int32_t>(cv));
+                    } // VARCHAR
+                     else if (std::holds_alternative<std::string>(cv)) {
+                        col_type = DataType::VARCHAR;
+                        orig_str = std::get<std::string>(cv);
+                        key = Catalog::hash_varchar(orig_str);
+                        // NUMBER
+                    } else if (std::holds_alternative<double>(cv)) {
+                        col_type = DataType::NUMBER;
+                        double v = std::get<double>(cv);
+                        key = Catalog::hash_number(v);
+                        orig_bytes.resize(8);
+                        std::memcpy(orig_bytes.data(), &v, 8);
+                        // DATETIME
+                    } else if (std::holds_alternative<DateTime>(cv)) {
+                        col_type = DataType::DATE;
+                        const DateTime& dt = std::get<DateTime>(cv);
+                        key = Catalog::hash_datetime(dt);
+                        orig_bytes = {
+                            static_cast<uint8_t>(dt.year & 0xFF),
+                            static_cast<uint8_t>((dt.year >> 8) & 0xFF),
+                            dt.month, dt.day, dt.hour, dt.minute, dt.second
+                        };
+                    } else {
+                        can_use_index = false;
+                    }
+                    if (can_use_index) {
+                        current_op = std::make_unique<SecondaryIndexScanOperator>(
+                            left_table, idx_btree, key, col_type, orig_str, orig_bytes, col_idx);
+                        where_handled = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!current_op) {
+        current_op = std::make_unique<SeqScanOperator>(left_table);
+    }
 
     std::string current_alias = stmt.table_alias;
 
@@ -51,7 +119,7 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
         current_alias = "";
     }
 
-    if (stmt.where_clause.has_value()) {
+    if (!where_handled && stmt.where_clause.has_value()) {
         current_op = std::make_unique<FilterOperator>(std::move(current_op), stmt.where_clause);
     }
 
@@ -108,9 +176,62 @@ std::unique_ptr<LogicalNode> Planner::optimize_select(std::unique_ptr<LogicalNod
     }
 
     std::optional<uint32_t> pk = try_extract_pk_from_where(filter->where_clause_, table->get_columns());
-    if(pk.has_value()){
-        filter->children_[0] = std::make_unique<LogicalIndexScan>(scan->table_name_,pk.value());
+    if (pk.has_value()) {
+        filter->children_[0] = std::make_unique<LogicalIndexScan>(scan->table_name_, pk.value());
         filter->where_clause_ = std::nullopt;
+    } else if (filter->where_clause_.has_value() &&
+               filter->where_clause_->op == "=" &&
+               !std::holds_alternative<std::monostate>(filter->where_clause_->value))
+    {
+        auto idx = catalog_.find_index_for_column(scan->table_name_, filter->where_clause_->column);
+        if (idx.has_value()) {
+            const auto& wc = filter->where_clause_.value();
+            Table* t = catalog_.get_table(scan->table_name_);
+            int col_idx = -1;
+            if (t) {
+                const auto& cols = t->get_columns();
+                for (int i = 0; i < (int)cols.size(); i++)
+                    if (cols[i].name == wc.column) { col_idx = i; break; }
+            }
+            if (col_idx != -1 && t) {
+                Value cv = coerce_value(wc.value, t->get_columns()[col_idx]);
+                uint32_t key = 0;
+                DataType col_type = DataType::INT;
+                std::string orig_str;
+                std::vector<uint8_t> orig_bytes;
+                bool can_use_index = true;
+                if (std::holds_alternative<int32_t>(cv)) {
+                    col_type = DataType::INT;
+                    key = static_cast<uint32_t>(std::get<int32_t>(cv));
+                } else if (std::holds_alternative<std::string>(cv)) {
+                    col_type = DataType::VARCHAR;
+                    orig_str = std::get<std::string>(cv);
+                    key = Catalog::hash_varchar(orig_str);
+                } else if (std::holds_alternative<double>(cv)) {
+                    col_type = DataType::NUMBER;
+                    double v = std::get<double>(cv);
+                    key = Catalog::hash_number(v);
+                    orig_bytes.resize(8);
+                    std::memcpy(orig_bytes.data(), &v, 8);
+                } else if (std::holds_alternative<DateTime>(cv)) {
+                    col_type = DataType::DATE;
+                    const DateTime& dt = std::get<DateTime>(cv);
+                    key = Catalog::hash_datetime(dt);
+                    orig_bytes = {
+                        static_cast<uint8_t>(dt.year & 0xFF),
+                        static_cast<uint8_t>((dt.year >> 8) & 0xFF),
+                        dt.month, dt.day, dt.hour, dt.minute, dt.second
+                    };
+                } else {
+                    can_use_index = false;
+                }
+                if (can_use_index) {
+                    filter->children_[0] = std::make_unique<LogicalSecondaryIndexScan>(
+                        scan->table_name_, idx->index_name, key, col_type, orig_str, orig_bytes, col_idx);
+                    filter->where_clause_ = std::nullopt;
+                }
+            }
+        }
     }
 
     return plan;
@@ -203,6 +324,16 @@ std::unique_ptr<Operator> Planner::create_physical_plan(std::unique_ptr<LogicalN
             Table* table = catalog_.get_table(i->table_name_);
             return std::make_unique<IndexScanOperator>(table, i->primary_key_value_);
         }
+
+        case LogicalNodeType::SECONDARY_INDEX_SCAN: {
+            auto* si = static_cast<LogicalSecondaryIndexScan*>(node.get());
+            Table* table = catalog_.get_table(si->table_name_);
+            BTree* idx_btree = catalog_.get_index_btree(si->index_name_);
+            return std::make_unique<SecondaryIndexScanOperator>(
+                table, idx_btree, si->index_key_, si->col_type_,
+                si->original_string_, si->original_bytes_, si->column_index_);
+        }
+
         case LogicalNodeType::JOIN: {
             auto* j = static_cast<LogicalJoin*>(node.get());
             auto left_child = create_physical_plan(std::move(j->children_[0]));

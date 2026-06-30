@@ -25,7 +25,12 @@ public:
     bool remove(uint32_t key, uint32_t row_id);
 
     // bool unique_check(uint32_t key, uint32_t row_id);
-    
+
+    struct ChainEntry { uint32_t pk; std::vector<char> data; };
+
+    std::vector<uint32_t>   find_range(uint32_t key);
+    std::vector<ChainEntry> find_range_with_data(uint32_t key);
+
     uint32_t get_root_page_id() const { return root_page_id; }
 
     Pager& get_pager() { return pager; }

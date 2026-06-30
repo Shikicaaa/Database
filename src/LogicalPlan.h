@@ -3,7 +3,9 @@
 #include <vector>
 #include <memory>
 #include <optional>
+#include <cstdint>
 #include "JoinTypes.h"
+#include "Serializer.h"
 
 enum class JoinType;
 struct JoinCondition;
@@ -13,6 +15,7 @@ enum class LogicalNodeType {
     FILTER,
     PROJECT,
     INDEX_SCAN,
+    SECONDARY_INDEX_SCAN,
     JOIN
 };
 
@@ -84,6 +87,32 @@ public:
 
     LogicalIndexScan(const std::string& table_name, uint32_t pk_val)
         : table_name_(table_name), primary_key_value_(pk_val) {}
-    
+
     LogicalNodeType GetType() const override { return LogicalNodeType::INDEX_SCAN; }
+};
+
+class LogicalSecondaryIndexScan : public LogicalNode {
+public:
+    std::string table_name_;
+    std::string index_name_;
+    uint32_t index_key_;
+    DataType col_type_;
+    std::string original_string_;   // VARCHAR only
+    std::vector<uint8_t> original_bytes_;    // NUMBER / DATETIME
+
+    int column_index_;
+
+    LogicalSecondaryIndexScan(
+        std::string t, std::string i,
+        uint32_t key, DataType col_type,
+        std::string orig_str,
+        std::vector<uint8_t> orig_bytes,
+        int col_idx)
+            : table_name_(std::move(t)), index_name_(std::move(i)),
+          index_key_(key), col_type_(col_type),
+          original_string_(std::move(orig_str)),
+          original_bytes_(std::move(orig_bytes)),
+          column_index_(col_idx) {}
+
+    LogicalNodeType GetType() const override { return LogicalNodeType::SECONDARY_INDEX_SCAN; }
 };

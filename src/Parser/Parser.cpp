@@ -67,7 +67,7 @@ Statement Parser::parse_statement()
         case TokenType::INSERT: return parse_insert();
         case TokenType::UPDATE: return parse_update();
         case TokenType::DELETE: return parse_delete();
-        case TokenType::CREATE: return parse_create_table();
+        case TokenType::CREATE: return parse_create();
         case TokenType::JOIN:  return parse_join();
         default:
             throw std::runtime_error(
@@ -352,12 +352,25 @@ DeleteStatement Parser::parse_delete()
     );
 
 */
-CreateTableStatement Parser::parse_create_table()
+Statement Parser::parse_create()
 {
-    CreateTableStatement stmt;
-
     expect(TokenType::CREATE, "expected CREATE");
-    expect(TokenType::TABLE,  "expected TABLE");
+
+    if (check(TokenType::INDEX)) {
+        advance(); // consume INDEX
+        CreateIndexStatement idx_stmt;
+        idx_stmt.index_name = expect(TokenType::IDENTIFIER, "expected index name").value;
+        expect(TokenType::ON, "expected ON");
+        idx_stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
+        expect(TokenType::LPAR, "expected '('");
+        idx_stmt.column_name = expect(TokenType::IDENTIFIER, "expected column name").value;
+        expect(TokenType::RPAR, "expected ')'");
+        return idx_stmt;
+    }
+
+    expect(TokenType::TABLE, "expected TABLE or INDEX after CREATE");
+
+    CreateTableStatement stmt;
 
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
     expect(TokenType::LPAR, "expected '('");

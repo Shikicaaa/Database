@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <ctime>
+#include <vector>
 
 struct FKReference {
     std::string child_table;
@@ -12,19 +13,37 @@ struct FKReference {
     std::string parent_column_name;
 };
 
+struct IndexInfo {
+    std::string index_name;
+    std::string table_name;
+    std::string column_name;
+    uint32_t    root_page_id;
+};
+
 class Catalog {
 private:
     Pager& pager;
     std::unique_ptr<BTree> catalog_btree;
-    
+
     std::map<std::string, std::unique_ptr<BTree>> btrees_cache;
     std::map<std::string, std::unique_ptr<Table>> tables_cache;
     std::map<uint32_t, std::string> root_page_to_name_;
-    
+
+    // Secondary indexes
+    std::map<std::string, std::unique_ptr<BTree>> index_btrees_cache_;
+    std::vector<IndexInfo> loaded_indexes_;
+    bool indexes_loaded_ = false;
+
     static uint32_t hash_table_name(const std::string& name);
-    
-    // Entry format: [4B root_page_id][4B created_at][4B version][2B schema_size][schema...][1B name_len][name]
-    // The table-name suffix is optional for backward compatibility with old entries.
+public:
+    static uint32_t hash_varchar(const std::string& s);
+    static uint32_t hash_number(double v);
+    static uint32_t hash_datetime(const DateTime& dt);
+private:
+
+    // Catalog entry format:
+    //   Table: [1B type=0x01][4B root_page_id][4B created_at][4B version][2B schema_size][schema][1B name_len][name]
+    //   Index: [1B type=0x02][4B root_page_id][1B table_name_len][table_name][1B col_name_len][col_name][1B index_name_len][index_name]
     std::vector<uint8_t> serialize_catalog_entry(
         uint32_t root_page_id, uint32_t created_at,
         uint32_t version, const std::vector<ColumnDefinition>& schema,
@@ -36,12 +55,36 @@ private:
         std::vector<ColumnDefinition>& schema,
         std::string& table_name);
 
+    std::vector<uint8_t> serialize_index_entry(
+        uint32_t root_page_id,
+        const std::string& table_name,
+        const std::string& column_name,
+        const std::string& index_name);
+
+    bool deserialize_index_entry(
+        const std::vector<char>& data,
+        uint32_t& root_page_id,
+        std::string& table_name,
+        std::string& column_name,
+        std::string& index_name);
+
+    void ensure_indexes_loaded();
+
 public:
     Catalog(Pager& p);
 
     bool create_table(const std::string& name, const std::vector<ColumnDefinition>& cols);
     Table* get_table(const std::string& name);
     bool table_exists(const std::string& name);
+
+    // Secondary indexes
+    bool create_secondary_index(const std::string& index_name,
+                                const std::string& table_name,
+                                const std::string& column_name);
+    BTree* get_index_btree(const std::string& index_name);
+    std::optional<IndexInfo> find_index_for_column(const std::string& table_name,
+                                                    const std::string& column_name);
+    std::vector<IndexInfo> get_indexes_for_table(const std::string& table_name);
 
     // FK enforcement
     bool fk_value_exists(const std::string& table_name, const std::string& column_name, const Value& value);
