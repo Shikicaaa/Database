@@ -85,6 +85,8 @@ public:
     std::optional<IndexInfo> find_index_for_column(const std::string& table_name,
                                                     const std::string& column_name);
     std::vector<IndexInfo> get_indexes_for_table(const std::string& table_name);
+    std::vector<std::string> get_all_table_names();
+    std::vector<IndexInfo>   get_all_indexes();
 
     // FK enforcement
     bool fk_value_exists(const std::string& table_name, const std::string& column_name, const Value& value);

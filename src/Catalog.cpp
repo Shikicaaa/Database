@@ -239,6 +239,7 @@ bool Catalog::create_secondary_index(const std::string& index_name,
                                       const std::string& table_name,
                                       const std::string& column_name)
 {
+    ensure_indexes_loaded();  // ensure existing indexes are in memory before we add a new one
     Table* table = get_table(table_name);
     if (!table) {
         std::cerr << "CATALOG: Table '" << table_name << "' not found for index creation.\n";
@@ -321,6 +322,42 @@ bool Catalog::create_secondary_index(const std::string& index_name,
 
     std::cout << "CATALOG: Created index '" << index_name << "' on " << table_name << "." << column_name << "\n";
     return true;
+}
+
+std::vector<std::string> Catalog::get_all_table_names() {
+    std::vector<std::string> names;
+    uint32_t page_id = catalog_btree->find_first_leaf_node();
+    while (page_id != 0) {
+        Page* page = pager.get_page(page_id);
+        PageHeader* ph = reinterpret_cast<PageHeader*>(page->data);
+        SlottedPage sp(page->data);
+        uint16_t* ptrs = sp.get_cell_pointers();
+        for (uint16_t i = 0; i < ph->num_cells; i++) {
+            LeafCellHeader* lch = reinterpret_cast<LeafCellHeader*>(page->data + ptrs[i]);
+            std::vector<char> raw;
+            if (lch->flags & CELL_FLAG_OVERFLOW) {
+                uint32_t ovfl;
+                std::memcpy(&ovfl, page->data + ptrs[i] + LEAF_CELL_HEADER_SIZE, sizeof(uint32_t));
+                raw = SlottedPage::read_from_overflow(ovfl, pager);
+            } else {
+                const char* dp = page->data + ptrs[i] + LEAF_CELL_HEADER_SIZE;
+                raw.assign(dp, dp + lch->data_size);
+            }
+            if (raw.empty() || static_cast<uint8_t>(raw[0]) != ENTRY_TYPE_TABLE) continue;
+            uint32_t root_page_id, created_at, version;
+            std::vector<ColumnDefinition> schema;
+            std::string name;
+            if (deserialize_catalog_entry(raw, root_page_id, created_at, version, schema, name) && !name.empty())
+                names.push_back(name);
+        }
+        page_id = ph->right_child_page_id;
+    }
+    return names;
+}
+
+std::vector<IndexInfo> Catalog::get_all_indexes() {
+    ensure_indexes_loaded();
+    return loaded_indexes_;
 }
 
 BTree* Catalog::get_index_btree(const std::string& index_name) {

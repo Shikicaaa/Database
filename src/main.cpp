@@ -6,8 +6,18 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <cctype>
 #include <readline/readline.h>
 #include <readline/history.h>
+
+static std::string trim_lower(const std::string& s) {
+    size_t a = s.find_first_not_of(" \t");
+    if (a == std::string::npos) return "";
+    size_t b = s.find_last_not_of(" \t");
+    std::string out = s.substr(a, b - a + 1);
+    for (char& c : out) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+    return out;
+}
 
 static void print_result(const ExecutionResult& result)
 {
@@ -124,6 +134,110 @@ int main()
         if (line == "exit" || line == "quit") {
             std::cout << "NA SPAVANJE!\n";
             break;
+        }
+
+        // Commands
+        /*
+        /showme or /sm or /gimme shows all tables and indexes in the catalog.
+        /showme <filter> or /sm <filter> or /gimme <filter> shows filtered results. Filter can be "table", "tables", "idx", "index", or "indexes".
+        */
+        {
+            std::string tl = trim_lower(line);
+            bool is_meta = (tl == "/showme" || tl == "/sm" || tl == "/gimme" ||
+                            tl.rfind("/showme ", 0) == 0 ||
+                            tl.rfind("/sm ", 0) == 0 ||
+                            tl.rfind("/gimme ", 0) == 0);
+            if (is_meta) {
+                std::string filter;
+                size_t sp = tl.find(' ');
+                if (sp != std::string::npos) filter = trim_lower(tl.substr(sp + 1));
+
+                bool show_tables = filter.empty() || filter == "table" || filter == "tables";
+                bool show_indexes = filter.empty() || filter == "idx" || filter == "index" || filter == "indexes";
+
+                if (show_tables) {
+                    auto names = catalog.get_all_table_names();
+                    std::cout << "Tables (" << names.size() << "):\n";
+                    for (const auto& n : names) std::cout << "  " << n << "\n";
+                }
+                if (show_tables && show_indexes) std::cout << "\n";
+                if (show_indexes) {
+                    auto idxs = catalog.get_all_indexes();
+                    std::cout << "Indexes (" << idxs.size() << "):\n";
+                    for (const auto& ix : idxs)
+                        std::cout << "  " << ix.index_name << "  ->  "
+                                  << ix.table_name << "(" << ix.column_name << ")\n";
+                }
+                std::cout << "\n";
+                continue;
+            }
+        }
+
+        // /schema <tablename>
+        {
+            std::string tl = trim_lower(line);
+            if (tl.rfind("/schema", 0) == 0) {
+                std::string arg = line.size() > 7 ? line.substr(7) : "";
+                size_t a = arg.find_first_not_of(" \t'\"");
+                size_t b = arg.find_last_not_of(" \t'\"");
+                std::string tname = (a != std::string::npos) ? arg.substr(a, b - a + 1) : "";
+
+                if (tname.empty()) {
+                    std::cout << "Usage: /schema <table_name>\n\n";
+                } else {
+                    Table* t = catalog.get_table(tname);
+                    if (!t) {
+                        std::cout << "ERROR: Table '" << tname << "' not found.\n\n";
+                    } else {
+                        auto type_str = [](const ColumnDefinition& col) -> std::string {
+                            switch (col.type) {
+                                case DataType::INT: return "INT";
+                                case DataType::VARCHAR: return "VARCHAR(" + std::to_string(col.max_length) + ")";
+                                case DataType::NUMBER: "NUMBER";
+                                case DataType::DATE: return "DATE";
+                                case DataType::BOOLEAN: return "BOOLEAN";
+                                default: return "?";
+                            }
+                        };
+                        auto constraint_str = [](const ColumnDefinition& col) -> std::string {
+                            std::string s;
+                            if (col.is_primary_key) s += "PK ";
+                            if (!col.is_nullable) s += "NOT NULL ";
+                            if (col.is_unique) s += "UNIQUE ";
+                            if (!col.fk_table.empty()) s += "FK->" + col.fk_table + "." + col.fk_column + " ";
+                            if (!s.empty() && s.back() == ' ') s.pop_back();
+                            return s;
+                        };
+
+                        const auto& cols = t->get_columns();
+                        size_t w_name = 6, w_type = 4, w_cons = 11;
+                        for (const auto& col : cols) {
+                            w_name = std::max(w_name, col.name.size());
+                            w_type = std::max(w_type, type_str(col).size());
+                            w_cons = std::max(w_cons, constraint_str(col).size());
+                        }
+                        auto sep = [&]() {
+                            std::cout << "+-" << std::string(w_name, '-')
+                                      << "-+-" << std::string(w_type, '-')
+                                      << "-+-" << std::string(w_cons, '-') << "-+\n";
+                        };
+                        std::cout << "Schema: " << tname << "\n";
+                        sep();
+                        std::cout << "| " << std::left << std::setw(w_name) << "column"
+                                  << " | " << std::setw(w_type) << "type"
+                                  << " | " << std::setw(w_cons) << "constraints" << " |\n";
+                        sep();
+                        for (const auto& col : cols) {
+                            std::cout << "| " << std::left << std::setw(w_name) << col.name
+                                      << " | " << std::setw(w_type) << type_str(col)
+                                      << " | " << std::setw(w_cons) << constraint_str(col) << " |\n";
+                        }
+                        sep();
+                        std::cout << "\n";
+                    }
+                }
+                continue;
+            }
         }
 
         if (!line.empty())
