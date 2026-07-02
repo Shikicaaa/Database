@@ -39,6 +39,8 @@ class Pager{
         DBHeader db_header;
 
         PageCache page_cache;
+
+        mutable std::mutex page_io_mutex_;
     public:
         Pager(const std::string& fileName, const char* name);
         ~Pager();

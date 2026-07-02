@@ -196,7 +196,7 @@ bool Catalog::deserialize_index_entry(
     return read_str(table_name) && read_str(column_name) && read_str(index_name);
 }
 
-void Catalog::ensure_indexes_loaded() {
+void Catalog::ensure_indexes_loaded_locked() {
     if (indexes_loaded_) return;
     indexes_loaded_ = true;
 
@@ -233,6 +233,11 @@ void Catalog::ensure_indexes_loaded() {
         }
         current_id = ph->right_child_page_id;
     }
+}
+
+void Catalog::ensure_indexes_loaded() {
+    std::lock_guard<std::mutex> lk(cache_mutex_);
+    ensure_indexes_loaded_locked();
 }
 
 bool Catalog::create_secondary_index(const std::string& index_name,
@@ -360,10 +365,12 @@ std::vector<IndexInfo> Catalog::get_all_indexes() {
 }
 
 BTree* Catalog::get_index_btree(const std::string& index_name) {
+    std::lock_guard<std::mutex> lk(cache_mutex_);
+
     auto it = index_btrees_cache_.find(index_name);
     if (it != index_btrees_cache_.end()) return it->second.get();
 
-    ensure_indexes_loaded();
+    ensure_indexes_loaded_locked();
     for (const auto& info : loaded_indexes_) {
         if (info.index_name == index_name) {
             auto btree = std::make_unique<BTree>(pager, info.root_page_id, false);
@@ -428,6 +435,8 @@ bool Catalog::create_table(const std::string& name, const std::vector<ColumnDefi
 }
 
 Table* Catalog::get_table(const std::string& name) {
+    std::lock_guard<std::mutex> lk(cache_mutex_);
+
     auto it = tables_cache.find(name);
     if (it != tables_cache.end()) {
         return it->second.get();

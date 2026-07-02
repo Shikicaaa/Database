@@ -73,12 +73,18 @@ Pager::~Pager()
 
 Page* Pager::get_page(uint32_t pageID){
     Page* cached_page = page_cache.find_page(pageID);
-    if(cached_page) return cached_page;
+    if (cached_page) return cached_page;
 
-    char page_data[PAGE_SIZE];
-    file.seekg(pageID * PAGE_SIZE);
+    std::lock_guard<std::mutex> io_lk(page_io_mutex_);
+
+    // another thread may have loaded this page
+    cached_page = page_cache.find_page(pageID);
+    if (cached_page) return cached_page;
+
+    char page_data[PAGE_SIZE] = {};
+    file.seekg(static_cast<std::streamoff>(pageID) * PAGE_SIZE);
     file.read(page_data, PAGE_SIZE);
-    if(!file){
+    if (!file && !file.eof()) {
         LOG_ERROR("Pager", "Error reading page " + std::to_string(pageID) + " from disk");
         file.clear();
         return nullptr;

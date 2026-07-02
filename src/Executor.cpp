@@ -8,6 +8,13 @@ Executor::Executor(Catalog& catalog) : catalog_(catalog) {}
 
 ExecutionResult Executor::execute(const Statement& stmt)
 {
+    Catalog::ReadLock  rl;
+    Catalog::WriteLock wl;
+    if (std::holds_alternative<SelectStatement>(stmt))
+        rl = catalog_.acquire_read();
+    else
+        wl = catalog_.acquire_write();
+
     return std::visit([this](const auto& s) -> ExecutionResult {
         using T = std::decay_t<decltype(s)>;
 

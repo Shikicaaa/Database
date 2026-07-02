@@ -4,6 +4,8 @@
 #include "BTree.h"
 #include <map>
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <ctime>
 #include <vector>
 
@@ -34,7 +36,11 @@ private:
     std::vector<IndexInfo> loaded_indexes_;
     bool indexes_loaded_ = false;
 
+    mutable std::shared_mutex rw_mutex_;
+    mutable std::mutex cache_mutex_;
+
     static uint32_t hash_table_name(const std::string& name);
+    void ensure_indexes_loaded_locked();
 public:
     static uint32_t hash_varchar(const std::string& s);
     static uint32_t hash_number(double v);
@@ -71,6 +77,11 @@ private:
     void ensure_indexes_loaded();
 
 public:
+    using ReadLock  = std::shared_lock<std::shared_mutex>;
+    using WriteLock = std::unique_lock<std::shared_mutex>;
+    ReadLock  acquire_read()  const { return ReadLock(rw_mutex_);  }
+    WriteLock acquire_write()       { return WriteLock(rw_mutex_); }
+
     Catalog(Pager& p);
 
     bool create_table(const std::string& name, const std::vector<ColumnDefinition>& cols);
