@@ -2,6 +2,7 @@
 #include "SlottedPage.h"
 #include "Logger.h"
 #include <optional>
+#include <algorithm>
 #include <cstring>
 
 static const uint8_t ENTRY_TYPE_TABLE = 0x01;
@@ -325,6 +326,278 @@ bool Catalog::create_secondary_index(const std::string& index_name,
     loaded_indexes_.push_back({index_name, table_name, column_name, final_root});
 
     LOG_DEBUG("Catalog", "Created index '" + index_name + "' on " + table_name + "." + column_name);
+    return true;
+}
+
+bool Catalog::drop_index(const std::string& index_name)
+{
+    ensure_indexes_loaded();
+
+    bool found = false;
+    for (const auto& info : loaded_indexes_) {
+        if (info.index_name == index_name) { found = true; break; }
+    }
+    if (!found) {
+        LOG_WARN("Catalog", "Index '" + index_name + "' not found");
+        return false;
+    }
+
+    BTree* idx_btree = get_index_btree(index_name);
+    if (idx_btree) {
+        idx_btree->free_all_pages();
+    }
+
+    catalog_btree->remove(hash_table_name("__idx__" + index_name), 0);
+
+    // In the end clear the cache and loaded indexes
+    {
+        std::lock_guard<std::mutex> lk(cache_mutex_);
+        index_btrees_cache_.erase(index_name);
+        loaded_indexes_.erase(
+            std::remove_if(loaded_indexes_.begin(), loaded_indexes_.end(),
+                           [&](const IndexInfo& i){ return i.index_name == index_name; }),
+            loaded_indexes_.end());
+    }
+
+    LOG_DEBUG("Catalog", "Dropped index '" + index_name + "'");
+    return true;
+}
+
+bool Catalog::drop_table(const std::string& name)
+{
+    if (!table_exists(name)) {
+        LOG_WARN("Catalog", "Table '" + name + "' does not exist");
+        return false;
+    }
+
+    // FK check
+    auto refs = get_referencing_tables(name);
+    if (!refs.empty()) {
+        LOG_ERROR("Catalog", "Cannot drop table '" + name + "': referenced by '" + refs[0].child_table + "'");
+        return false;
+    }
+
+    // Cascade-drop all secondary indexe
+    auto indexes = get_indexes_for_table(name);
+    for (const auto& idx : indexes) {
+        drop_index(idx.index_name);
+    }
+
+    Table* tbl = get_table(name);
+    if (tbl) {
+        tbl->get_btree().free_all_pages();
+    }
+
+    catalog_btree->remove(hash_table_name(name), 0);
+
+    uint32_t root_id = tbl ? tbl->get_btree().get_root_page_id() : 0;
+    {
+        std::lock_guard<std::mutex> lk(cache_mutex_);
+        tables_cache.erase(name);
+        btrees_cache.erase(name);
+        if (root_id != 0) root_page_to_name_.erase(root_id);
+    }
+
+    LOG_DEBUG("Catalog", "Dropped table '" + name + "'");
+    return true;
+}
+
+bool Catalog::alter_table_rename_column(
+    const std::string& table_name,
+    const std::string& old_name,
+    const std::string& new_name
+)
+{
+    Table* tbl = get_table(table_name);
+    if (!tbl) {
+        LOG_WARN("Catalog", "Table '" + table_name + "' not found");
+        return false;
+    }
+
+    std::vector<ColumnDefinition> cols = tbl->get_columns();
+    int col_idx = -1;
+    for (int i = 0; i < (int)cols.size(); i++) {
+        if (cols[i].name == old_name) { col_idx = i; break; }
+    }
+    if (col_idx == -1) {
+        LOG_WARN("Catalog", "Column '" + old_name + "' not found in '" + table_name + "'");
+        return false;
+    }
+    for (const auto& c : cols) {
+        if (c.name == new_name) {
+            LOG_WARN("Catalog", "Column '" + new_name + "' already exists in '" + table_name + "'");
+            return false;
+        }
+    }
+
+    cols[col_idx].name = new_name;
+
+    uint32_t key = hash_table_name(table_name);
+    auto old_data = catalog_btree->find(key, 0);
+    if (!old_data.has_value()) return false;
+    uint32_t root_page_id, created_at, version;
+    std::vector<ColumnDefinition> dummy_schema;
+    std::string recovered_name;
+    if (!deserialize_catalog_entry(old_data.value(), root_page_id, created_at, version, dummy_schema, recovered_name))
+        return false;
+    catalog_btree->remove(key, 0);
+    auto new_data = serialize_catalog_entry(root_page_id, created_at, version, cols, table_name);
+    if (!catalog_btree->insert(key, 0, new_data.data(), static_cast<uint16_t>(new_data.size())))
+        return false;
+
+    // Evict table cache to force schema reload
+    {
+        std::lock_guard<std::mutex> lk(cache_mutex_);
+        tables_cache.erase(table_name);
+        btrees_cache.erase(table_name);
+    }
+
+    LOG_DEBUG("Catalog", "Renamed column '" + old_name + "' to '" + new_name + "' in '" + table_name + "'");
+    return true;
+}
+
+bool Catalog::alter_table_add_column(const std::string& table_name, const ColumnDefinition& col)
+{
+    Table* tbl = get_table(table_name);
+    if (!tbl) {
+        LOG_WARN("Catalog", "Table '" + table_name + "' not found");
+        return false;
+    }
+
+    // name conflict
+    for (const auto& c : tbl->get_columns()) {
+        if (c.name == col.name) {
+            LOG_WARN("Catalog", "Column '" + col.name + "' already exists in '" + table_name + "'");
+            return false;
+        }
+    }
+
+    std::vector<Row> old_rows = tbl->scan_all();
+
+    for (const Row& row : old_rows) {
+        tbl->remove_row(tbl->extract_primary_key(row));
+    }
+
+    std::vector<ColumnDefinition> new_schema = tbl->get_columns();
+    new_schema.push_back(col);
+
+    uint32_t key = hash_table_name(table_name);
+    auto old_data = catalog_btree->find(key, 0);
+    if (!old_data.has_value()) return false;
+    uint32_t root_page_id, created_at, version;
+    std::vector<ColumnDefinition> dummy;
+    std::string recovered_name;
+    if (!deserialize_catalog_entry(old_data.value(), root_page_id, created_at, version, dummy, recovered_name))
+        return false;
+    catalog_btree->remove(key, 0);
+    auto new_data = serialize_catalog_entry(root_page_id, created_at, version, new_schema, table_name);
+    if (!catalog_btree->insert(key, 0, new_data.data(), static_cast<uint16_t>(new_data.size())))
+        return false;
+
+    {
+        std::lock_guard<std::mutex> lk(cache_mutex_);
+        tables_cache.erase(table_name);
+        btrees_cache.erase(table_name);
+    }
+
+    Table* fresh = get_table(table_name);
+    if (!fresh) return false;
+    Value default_val;
+    if (col.is_nullable) {
+        default_val = std::monostate{};
+    } else {
+        switch (col.type) {
+            case DataType::INT: default_val = int32_t{0}; break;
+            case DataType::NUMBER: default_val = double{0.0}; break;
+            case DataType::VARCHAR: default_val = std::string{}; break;
+            case DataType::BOOLEAN: default_val = bool{false}; break;
+            case DataType::DATE: default_val = DateTime{}; break;
+        }
+    }
+    for (Row row : old_rows) {
+        row.push_back(default_val);
+        fresh->insert_row(row);
+    }
+
+    LOG_DEBUG("Catalog", "Added column '" + col.name + "' to '" + table_name + "'");
+    return true;
+}
+
+bool Catalog::alter_table_drop_column(const std::string& table_name, const std::string& col_name)
+{
+    Table* tbl = get_table(table_name);
+    if (!tbl) {
+        LOG_WARN("Catalog", "Table '" + table_name + "' not found");
+        return false;
+    }
+
+    const auto& old_cols = tbl->get_columns();
+    int col_idx = -1;
+    for (int i = 0; i < (int)old_cols.size(); i++) {
+        if (old_cols[i].name == col_name) { col_idx = i; break; }
+    }
+    if (col_idx == -1) {
+        LOG_WARN("Catalog", "Column '" + col_name + "' not found in '" + table_name + "'");
+        return false;
+    }
+    if (old_cols[col_idx].is_primary_key) {
+        LOG_ERROR("Catalog", "Cannot drop PRIMARY KEY column '" + col_name + "'");
+        return false;
+    }
+
+    auto refs = get_referencing_tables(table_name);
+    for (const auto& ref : refs) {
+        if (ref.parent_column_name == col_name) {
+            LOG_ERROR("Catalog", "Cannot drop column '" + col_name + "': referenced by '" +
+                      ref.child_table + "." + ref.fk_column_name + "'");
+            return false;
+        }
+    }
+
+    auto idx_info = find_index_for_column(table_name, col_name);
+    if (idx_info.has_value()) {
+        drop_index(idx_info->index_name);
+        tbl = get_table(table_name);
+        if (!tbl) return false;
+    }
+
+    std::vector<Row> old_rows = tbl->scan_all();
+
+    for (const Row& row : old_rows) {
+        tbl->remove_row(tbl->extract_primary_key(row));
+    }
+
+    std::vector<ColumnDefinition> new_schema = tbl->get_columns();
+    new_schema.erase(new_schema.begin() + col_idx);
+
+    uint32_t key = hash_table_name(table_name);
+    auto old_data = catalog_btree->find(key, 0);
+    if (!old_data.has_value()) return false;
+    uint32_t root_page_id, created_at, version;
+    std::vector<ColumnDefinition> dummy;
+    std::string recovered_name;
+    if (!deserialize_catalog_entry(old_data.value(), root_page_id, created_at, version, dummy, recovered_name))
+        return false;
+    catalog_btree->remove(key, 0);
+    auto new_data = serialize_catalog_entry(root_page_id, created_at, version, new_schema, table_name);
+    if (!catalog_btree->insert(key, 0, new_data.data(), static_cast<uint16_t>(new_data.size())))
+        return false;
+
+    // Evict cache
+    {
+        std::lock_guard<std::mutex> lk(cache_mutex_);
+        tables_cache.erase(table_name);
+        btrees_cache.erase(table_name);
+    }
+
+    Table* fresh = get_table(table_name);
+    if (!fresh) return false;
+    for (Row row : old_rows) {
+        row.erase(row.begin() + col_idx);
+        fresh->insert_row(row);
+    }
+
+    LOG_DEBUG("Catalog", "Dropped column '" + col_name + "' from '" + table_name + "'");
     return true;
 }
 
