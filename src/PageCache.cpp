@@ -1,5 +1,6 @@
 #include "PageCache.h"
 #include "Pager.h"
+#include "Logger.h"
 
 Page* PageCache::find_page(uint32_t page_id) {
     std::lock_guard<std::mutex> lock(cache_mutex);
@@ -37,7 +38,7 @@ Page* PageCache::insert_page(uint32_t page_id, const char* data){
     page->access_count = 1;
     page_cache[page_id] = index;
 
-    std::cout << "[CACHE] Inserted page " << page_id << " at index " << index << "." << std::endl;
+    LOG_DEBUG("Cache", "Inserted page " + std::to_string(page_id) + " at index " + std::to_string(index));
     return page;
 }
 
@@ -61,12 +62,6 @@ void PageCache::flush_page(uint32_t page_id) {
     }
 }
 
-/*
-Start from beginning.
-If ref = 0 evict
-If ref = 1, set ref = 0 and move on
-Do until we find a page to evict or we loop through all pages
-*/
 void PageCache::evict_page()
 {
     int iterations = 0;
@@ -77,11 +72,11 @@ void PageCache::evict_page()
                 on_evict(cache_buffer[index]->page_id, cache_buffer[index]->data);
                 cache_buffer[index]->is_dirty = false;
                 page_cache.erase(cache_buffer[index]->page_id);
-                std::cout << "[CACHE] Evicted page " << cache_buffer[index]->page_id << " from cache." << std::endl;
+                LOG_DEBUG("Cache", "Evicted dirty page " + std::to_string(cache_buffer[index]->page_id) + " from buffer pool");
                 return;
             }else{
                 page_cache.erase(cache_buffer[index]->page_id);
-                std::cout << "[CACHE] Evicted clean page " << cache_buffer[index]->page_id << " from cache." << std::endl;
+                LOG_DEBUG("Cache", "Evicted clean page " + std::to_string(cache_buffer[index]->page_id) + " from buffer pool");
                 return;
             }
         }

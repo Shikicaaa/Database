@@ -1,4 +1,5 @@
 #include "FilterOperator.h"
+#include "Logger.h"
 #include <algorithm>
 
 FilterOperator::FilterOperator(std::unique_ptr<Operator> child, const std::optional<WhereClause>& where_clause)
@@ -24,7 +25,7 @@ std::optional<Row> FilterOperator::Next(){
             uint32_t col_index = find_column_index(lookup, child_->GetOutputSchema());
             if (col_index == -1)
             {
-                std::cerr << "ERROR: Column " << lookup << " not found in schema!\n";
+                LOG_ERROR("Filter", "Column '" + lookup + "' not found in schema");
                 return std::nullopt;
             }
             auto val = current_row.value()[col_index];

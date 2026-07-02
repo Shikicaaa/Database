@@ -1,5 +1,6 @@
 #include "UpdateOperator.h"
 #include "TypeCoercion.h"
+#include "Logger.h"
 #include <algorithm>
 #include <cstring>
 
@@ -47,7 +48,7 @@ std::optional<Row> UpdateOperator::Next() {
         for (const auto& [col_name, new_val] : set_clauses_) {
             int idx = find_column_index(col_name);
             if (idx == -1) {
-                std::cerr << "ERROR: Column '" << col_name << "' not found in table schema.\n";
+                LOG_ERROR("Update", "Column '" + col_name + "' not found in table schema");
                 fk_violation = true;
                 break;
             }
@@ -61,10 +62,7 @@ std::optional<Row> UpdateOperator::Next() {
                     !catalog_->fk_value_exists(table_->get_columns()[idx].fk_table,
                                                table_->get_columns()[idx].fk_column,
                                                coerced)) {
-                    std::cerr << "ERROR: FK constraint violation on UPDATE - value for '"
-                              << col_name << "' does not exist in '"
-                              << table_->get_columns()[idx].fk_table << "."
-                              << table_->get_columns()[idx].fk_column << "'.\n";
+                    LOG_ERROR("Update", "FK constraint violation — value for '" + col_name + "' does not exist in '" + table_->get_columns()[idx].fk_table + "." + table_->get_columns()[idx].fk_column + "'");
                     fk_violation = true;
                     break;
                 }
@@ -78,9 +76,7 @@ std::optional<Row> UpdateOperator::Next() {
                     auto refs = catalog_->get_referencing_tables(table_->get_name());
                     for (const auto& ref : refs) {
                         if (catalog_->child_has_fk_value(ref.child_table, ref.fk_column_name, old_pk_value)) {
-                            std::cerr << "ERROR: Cannot update primary key value for column '" << col_name
-                                      << "' because it is referenced by child table '" << ref.child_table
-                                      << "' on column '" << ref.fk_column_name << "'.\n";
+                            LOG_ERROR("Update", "Cannot update PK for column '" + col_name + "' — referenced by child table '" + ref.child_table + "' on column '" + ref.fk_column_name + "'");
                             fk_violation = true;
                             break;
                         }
@@ -92,8 +88,7 @@ std::optional<Row> UpdateOperator::Next() {
         if(fk_violation) continue;
 
         if (!table_->update_row(pk, new_row)) {
-            std::cerr << "ERROR: Failed to update row with primary key " << pk
-                      << " in table '" << table_->get_columns()[0].name << "'\n";
+            LOG_ERROR("Update", "Failed to update row with PK " + std::to_string(pk) + " in table '" + table_->get_name() + "'");
         } else {
             update_count++;
             // Maintain secondary indexes for changed indexed columns

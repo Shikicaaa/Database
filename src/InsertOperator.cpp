@@ -1,5 +1,6 @@
 #include "InsertOperator.h"
 #include "TypeCoercion.h"
+#include "Logger.h"
 #include <cstring>
 
 InsertOperator::InsertOperator(Table* table, std::unique_ptr<Operator> child, Catalog* catalog)
@@ -35,9 +36,7 @@ std::optional<Row> InsertOperator::Next() {
                 const Value& fk_val = coerced[i];
                 if(std::holds_alternative<std::monostate>(fk_val)) continue; // NULL are allowed for nullable FK columns
                 if(!catalog_->fk_value_exists(cols[i].fk_table, cols[i].fk_column, fk_val)){
-                    std::cerr << "ERROR: FK constraint violation on INSERT - value for column '"
-                              << cols[i].name << "' does not exist in '"
-                              << cols[i].fk_table << "." << cols[i].fk_column << "'.\n";
+                    LOG_ERROR("Insert", "FK constraint violation — value for column '" + cols[i].name + "' does not exist in '" + cols[i].fk_table + "." + cols[i].fk_column + "'");
                     fk_violation = true;
                     break;
                 }
@@ -48,7 +47,7 @@ std::optional<Row> InsertOperator::Next() {
             }
         }
         if(!table_->insert_row(coerced)){
-            std::cerr << "ERROR: Failed to insert row into table '" << table_->get_columns()[0].name << "'\n";
+            LOG_ERROR("Insert", "Failed to insert row into table '" + table_->get_name() + "'");
         } else {
             row_count++;
             if (catalog_) {

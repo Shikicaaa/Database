@@ -1,11 +1,12 @@
 #include "Table.h"
 #include "SlottedPage.h"
+#include "Logger.h"
 
 bool Table::insert_row(const Row &row)
 {
     if (row.size() != columns.size())
     {
-        std::cerr << "ERROR: Row size doesn't match table schema!" << std::endl;
+        LOG_ERROR("Table", "Row size doesn't match table schema");
         return false;
     }
 
@@ -13,14 +14,9 @@ bool Table::insert_row(const Row &row)
 
     for (size_t i = 0; i < columns.size(); i++) {
         if (columns[i].is_primary_key || columns[i].is_unique) {
-            // TODO: Ovo mora da se kasnije promeni, nije dovoljno da se samo proveri primary, vec i ostali,
-            // + mora da se ubaci za unique kolone, a ne samo primary, odnosno da imamo btree index i za unique kolone
-            // trenutno je ovo samo da bi se testirao unique constraint, ali kasnije ce biti bitno i za ostale kolone koje nisu primary key
-            
             if (columns[i].is_primary_key) {
                 if (find_row(primary_key).has_value()) {
-                    std::cerr << "ERROR: Duplicate value for PRIMARY KEY/UNIQUE column '" 
-                              << columns[i].name << "' with value " << primary_key << std::endl;
+                    LOG_ERROR("Table", "Duplicate value for PRIMARY KEY/UNIQUE column '" + columns[i].name + "' with value " + std::to_string(primary_key));
                     return false;
                 }
             }
@@ -54,34 +50,30 @@ bool Table::update_row(uint32_t old_primary_key, const Row &new_row)
 {
     if (new_row.size() != columns.size())
     {
-        std::cerr << "ERROR: Row size doesn't match table schema!\n";
+        LOG_ERROR("Table", "Row size doesn't match table schema");
         return false;
     }
 
     uint32_t new_primary_key = extract_primary_key(new_row);
 
-    // Fast path: PK nije promenjen obicni in-place update.
     if (old_primary_key == new_primary_key) {
         std::vector<uint8_t> serialized_data = serializer.serialize(columns, new_row);
         return btree.update(old_primary_key, 0, serialized_data.data(), serialized_data.size());
     }
 
-    // PK se promenio pa proveri da novi PK vec ne postoji u tabeli
     if (find_row(new_primary_key).has_value()) {
-        std::cerr << "ERROR: Duplicate value for PRIMARY KEY " << new_primary_key
-                  << " — cannot change PK to an existing value.\n";
+        LOG_ERROR("Table", "Duplicate value for PRIMARY KEY " + std::to_string(new_primary_key) + " — cannot change PK to an existing value");
         return false;
     }
 
     if (!btree.remove(old_primary_key, 0)) {
-        std::cerr << "ERROR: update_row failed to remove old PK " << old_primary_key << "\n";
+        LOG_PANIC("Table", "update_row failed to remove old PK " + std::to_string(old_primary_key));
         return false;
     }
 
     std::vector<uint8_t> serialized_data = serializer.serialize(columns, new_row);
     if (!btree.insert(new_primary_key, 0, serialized_data.data(), serialized_data.size())) {
-        std::cerr << "ERROR: update_row failed to insert under new PK " << new_primary_key
-                  << "; row is lost — data inconsistency!\n";
+        LOG_PANIC("Table", "update_row failed to insert under new PK " + std::to_string(new_primary_key) + "; row is lost — data inconsistency");
         return false;
     }
 
@@ -91,7 +83,7 @@ bool Table::update_row(uint32_t old_primary_key, const Row &new_row)
 bool Table::remove_row(uint32_t primary_key)
 {
     if(!btree.remove(primary_key, 0)){
-        std::cerr << "ERROR: Deletion not successfull, key not found";
+        LOG_ERROR("Table", "Deletion not successful, key not found: " + std::to_string(primary_key));
         return false;
     }
     return true;
@@ -113,44 +105,43 @@ const std::vector<ColumnDefinition>& Table::get_columns() const
 {
     return columns;
 }
- 
+
 std::vector<Row> Table::scan_all()
 {
     std::vector<Row> result;
- 
+
     uint32_t current_id = btree.get_root_page_id();
- 
+
     while (true) {
         Page* page = btree.get_pager().get_page(current_id);
         PageHeader* h = reinterpret_cast<PageHeader*>(page->data);
- 
+
         if (h->node_type == LEAF) break;
- 
+
         SlottedPage sp(page->data);
         uint16_t* pointers = sp.get_cell_pointers();
- 
+
         if (h->num_cells == 0) break;
- 
+
         InternalNodeCell* cell = reinterpret_cast<InternalNodeCell*>(
             page->data + pointers[0]);
         current_id = cell->page_id;
     }
- 
+
     while (current_id != 0) {
         Page* page = btree.get_pager().get_page(current_id);
         PageHeader* h = reinterpret_cast<PageHeader*>(page->data);
         SlottedPage sp(page->data);
- 
+
         uint16_t* pointers = sp.get_cell_pointers();
- 
+
         for (int i = 0; i < h->num_cells; i++) {
             LeafCellHeader* cell_header = reinterpret_cast<LeafCellHeader*>(
                 page->data + pointers[i]);
- 
+
             std::vector<char> raw_data;
- 
+
             if (cell_header->flags & CELL_FLAG_OVERFLOW) {
-                // Podaci su na overflow stranicama
                 uint32_t overflow_page_id;
                 std::memcpy(&overflow_page_id,
                             page->data + pointers[i] + LEAF_CELL_HEADER_SIZE,
@@ -158,21 +149,20 @@ std::vector<Row> Table::scan_all()
                 raw_data = SlottedPage::read_from_overflow(
                     overflow_page_id, btree.get_pager());
             } else {
-                // Podaci su odmah iza headera
                 const char* data_ptr = page->data + pointers[i] + LEAF_CELL_HEADER_SIZE;
                 raw_data.assign(data_ptr, data_ptr + cell_header->data_size);
             }
- 
+
             Row row = serializer.deserialize(
                 columns,
                 reinterpret_cast<const uint8_t*>(raw_data.data()),
                 static_cast<uint16_t>(raw_data.size()));
- 
+
             result.push_back(row);
         }
- 
+
         current_id = h->right_child_page_id;
     }
- 
+
     return result;
 }

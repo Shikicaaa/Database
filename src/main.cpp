@@ -3,6 +3,7 @@
 #include "Parser/Lexer.h"
 #include "Parser/Parser.h"
 #include "Executor.h"
+#include "Logger.h"
 #include <iostream>
 #include <string>
 #include <iomanip>
@@ -107,8 +108,19 @@ static void print_result(const ExecutionResult& result)
     std::cout << result.message << "\n";
 }
 
-int main()
+int main(int argc, char* argv[])
 {
+    for (int i = 1; i < argc; i++) {
+        if (std::string(argv[i]) == "--loglevel" && i + 1 < argc) {
+            std::string lv = argv[++i];
+            if (lv == "debug")   Logger::set_level(LogLevel::DEBUG);
+            else if (lv == "warning") Logger::set_level(LogLevel::WARNING);
+            else if (lv == "error") Logger::set_level(LogLevel::ERROR);
+            else if (lv == "panic") Logger::set_level(LogLevel::PANIC);
+            else std::cout << "Unknown log level '" << lv << "'. Options: debug warning error panic\n";
+        }
+    }
+
     Pager   pager("database.db", "MyDB");
     Catalog catalog(pager);
     Executor executor(catalog);
@@ -193,7 +205,7 @@ int main()
                             switch (col.type) {
                                 case DataType::INT: return "INT";
                                 case DataType::VARCHAR: return "VARCHAR(" + std::to_string(col.max_length) + ")";
-                                case DataType::NUMBER: "NUMBER";
+                                case DataType::NUMBER: return "NUMBER";
                                 case DataType::DATE: return "DATE";
                                 case DataType::BOOLEAN: return "BOOLEAN";
                                 default: return "?";

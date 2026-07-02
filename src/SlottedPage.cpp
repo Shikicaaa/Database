@@ -1,4 +1,5 @@
 #include "SlottedPage.h"
+#include "Logger.h"
 
 SlottedPage::SlottedPage(char *page_data) : data(page_data) {}
 
@@ -368,7 +369,7 @@ uint32_t SlottedPage::lookup_internal(uint32_t key, uint32_t row_id)
     PageHeader* h = header();
     uint16_t* pointers = get_cell_pointers();
 
-    std::cout << "SP: Internal Lookup for key " << key << " inside Node with " << h->num_cells << " cells.\n";
+    LOG_DEBUG("SlottedPage", "Internal lookup for key " + std::to_string(key) + " inside node with " + std::to_string(h->num_cells) + " cells");
 
     for(int i = 0; i < h->num_cells; i++){
         uint16_t offset = pointers[i];

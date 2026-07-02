@@ -74,6 +74,8 @@ add_executable (
   "src/JoinOperator.cpp"
   "src/SecondaryIndexScanOperator.h"
   "src/SecondaryIndexScanOperator.cpp"
+  "src/Logger.h"
+  "src/Logger.cpp"
 )
 
 

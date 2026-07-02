@@ -1,5 +1,6 @@
 #include "Pager.h"
 #include "SlottedPage.h"
+#include "Logger.h"
 #include <cstring>
 
 Pager::Pager(const std::string &fileName, const char* name){
@@ -13,23 +14,20 @@ Pager::Pager(const std::string &fileName, const char* name){
     }
 
     file.seekg(0, std::ios::end);
-    // WE CHECK IF THE FILE IS EMPTY
     if(file.tellg() == 0){
         std::memset(&db_header, 0, sizeof(DBHeader));
         std::strncpy(db_header.name, name, sizeof(db_header.name) - 1);
-        db_header.num_pages = 2; //page 0 header, page 1 catalog root
+        db_header.num_pages = 2;
         db_header.page_size = PAGE_SIZE;
         db_header.root_page_id = 0;
         db_header.first_free_page_id = 0;
         db_header.catalog_root_page_id = 1;
 
-        // PAGE 0
         char page_zero[PAGE_SIZE] = {0};
         std::memcpy(page_zero, &db_header, sizeof(DBHeader));
 
         file.write(page_zero, PAGE_SIZE);
 
-        // PAGE 1
         char page_one[PAGE_SIZE] = {0};
         SlottedPage catalog_page(page_one);
         catalog_page.init_as_leaf_node(true);
@@ -63,7 +61,7 @@ Pager::Pager(const std::string &fileName, const char* name){
         file.seekp(id * PAGE_SIZE);
         file.write(data, PAGE_SIZE);
         file.flush();
-        std::cout << "[CACHE] Evicted dirty page " << id << " to disk." << std::endl;
+        LOG_DEBUG("Pager", "Flushed dirty page " + std::to_string(id) + " to disk");
     };
 }
 
@@ -81,7 +79,7 @@ Page* Pager::get_page(uint32_t pageID){
     file.seekg(pageID * PAGE_SIZE);
     file.read(page_data, PAGE_SIZE);
     if(!file){
-        std::cerr << "Error reading page " << pageID << " from disk." << std::endl;
+        LOG_ERROR("Pager", "Error reading page " + std::to_string(pageID) + " from disk");
         file.clear();
         return nullptr;
     }
@@ -118,7 +116,6 @@ uint32_t Pager::allocate_new_page()
         std::memset(recycled_page->data, 0, PAGE_SIZE);
         recycled_page->is_dirty = true;
     }else{
-        // if there is no free page, we initialize zeroed page on disk
         allocated_page_id = db_header.num_pages;
         db_header.num_pages++;
 
@@ -153,17 +150,16 @@ void Pager::free_page(uint32_t page_id)
 void Pager::set_root_page_id(uint32_t new_root_id)
 {
     db_header.root_page_id = new_root_id;
-    
+
     file.seekp(0);
     file.write(reinterpret_cast<char*>(&db_header), sizeof(DBHeader));
     file.flush();
-
 }
 
 void Pager::set_catalog_root_page_id(uint32_t new_root_id)
 {
     db_header.catalog_root_page_id = new_root_id;
-    
+
     file.seekp(0);
     file.write(reinterpret_cast<char*>(&db_header), sizeof(DBHeader));
     file.flush();

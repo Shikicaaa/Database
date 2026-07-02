@@ -1,6 +1,6 @@
 #include "Catalog.h"
 #include "SlottedPage.h"
-#include <iostream>
+#include "Logger.h"
 #include <optional>
 #include <cstring>
 
@@ -242,18 +242,17 @@ bool Catalog::create_secondary_index(const std::string& index_name,
     ensure_indexes_loaded();  // ensure existing indexes are in memory before we add a new one
     Table* table = get_table(table_name);
     if (!table) {
-        std::cerr << "CATALOG: Table '" << table_name << "' not found for index creation.\n";
+        LOG_WARN("Catalog", "Table '" + table_name + "' not found for index creation");
         return false;
     }
 
-    // Validate column exists and is INT
     const auto& cols = table->get_columns();
     int col_idx = -1;
     for (int i = 0; i < (int)cols.size(); i++) {
         if (cols[i].name == column_name) { col_idx = i; break; }
     }
     if (col_idx == -1) {
-        std::cerr << "CATALOG: Column '" << column_name << "' not found in table '" << table_name << "'.\n";
+        LOG_WARN("Catalog", "Column '" + column_name + "' not found in table '" + table_name + "'");
         return false;
     }
     bool is_int = cols[col_idx].type == DataType::INT;
@@ -261,7 +260,7 @@ bool Catalog::create_secondary_index(const std::string& index_name,
     bool is_number = cols[col_idx].type == DataType::NUMBER;
     bool is_datetime = cols[col_idx].type == DataType::DATE;
     if (!is_int && !is_varchar && !is_number && !is_datetime) {
-        std::cerr << "CATALOG: Secondary indexes not supported on this column type.\n";
+        LOG_WARN("Catalog", "Secondary indexes not supported on this column type");
         return false;
     }
 
@@ -312,7 +311,7 @@ bool Catalog::create_secondary_index(const std::string& index_name,
     std::vector<uint8_t> entry = serialize_index_entry(final_root, table_name, column_name, index_name);
     uint32_t key = hash_table_name("__idx__" + index_name);
     if (!catalog_btree->insert(key, 0, entry.data(), static_cast<uint16_t>(entry.size()))) {
-        std::cerr << "CATALOG: Failed to insert index '" << index_name << "' into catalog.\n";
+        LOG_ERROR("Catalog", "Failed to insert index '" + index_name + "' into catalog");
         return false;
     }
 
@@ -320,7 +319,7 @@ bool Catalog::create_secondary_index(const std::string& index_name,
     index_btrees_cache_[index_name] = std::move(idx_btree);
     loaded_indexes_.push_back({index_name, table_name, column_name, final_root});
 
-    std::cout << "CATALOG: Created index '" << index_name << "' on " << table_name << "." << column_name << "\n";
+    LOG_DEBUG("Catalog", "Created index '" + index_name + "' on " + table_name + "." + column_name);
     return true;
 }
 
@@ -399,7 +398,7 @@ std::vector<IndexInfo> Catalog::get_indexes_for_table(const std::string& table_n
 bool Catalog::create_table(const std::string& name, const std::vector<ColumnDefinition>& cols) {
     // if table already exists
     if (table_exists(name)) {
-        std::cerr << "CATALOG: Table '" << name << "' already exists!" << std::endl;
+        LOG_WARN("Catalog", "Table '" + name + "' already exists");
         return false;
     }
     
@@ -418,12 +417,12 @@ bool Catalog::create_table(const std::string& name, const std::vector<ColumnDefi
     uint32_t key = hash_table_name(name);
     
     if (!catalog_btree->insert(key, 0, entry_data.data(), static_cast<uint16_t>(entry_data.size()))) {
-        std::cerr << "CATALOG: Failed to insert table '" << name << "' into catalog!" << std::endl;
+        LOG_ERROR("Catalog", "Failed to insert table '" + name + "' into catalog");
         pager.free_page(table_root_page);
         return false;
     }
-    
-    std::cout << "CATALOG: Created table '" << name << "' with root page " << table_root_page << std::endl;
+
+    LOG_DEBUG("Catalog", "Created table '" + name + "' with root page " + std::to_string(table_root_page));
     root_page_to_name_[table_root_page] = name;
     return true;
 }
@@ -446,7 +445,7 @@ Table* Catalog::get_table(const std::string& name) {
     
     std::string recovered_name;
     if (!deserialize_catalog_entry(result.value(), root_page_id, created_at, version, schema, recovered_name)) {
-        std::cerr << "CATALOG: Failed to deserialize table '" << name << "'" << std::endl;
+        LOG_ERROR("Catalog", "Failed to deserialize table '" + name + "'");
         return nullptr;
     }
     
@@ -459,7 +458,7 @@ Table* Catalog::get_table(const std::string& name) {
     btrees_cache[name] = std::move(btree);
     tables_cache[name] = std::move(table);
     
-    std::cout << "CATALOG: Loaded table '" << name << "' from disk (root page " << root_page_id << ")" << std::endl;
+    LOG_DEBUG("Catalog", "Loaded table '" + name + "' from disk (root page " + std::to_string(root_page_id) + ")");
     root_page_to_name_[root_page_id] = name;
     return table_ptr;
 }
@@ -478,13 +477,12 @@ bool Catalog::fk_value_exists(const std::string &table_name, const std::string &
 {
     Table* parent = get_table(table_name);
     if (!parent) {
-        std::cerr << "CATALOG: Parent table '" << table_name << "' does not exist!" << std::endl;
+        LOG_WARN("Catalog", "Parent table '" + table_name + "' does not exist");
         return false;
     }
 
-    // Foregin key must be an integer!
     if (!std::holds_alternative<int32_t>(value)) {
-        std::cerr << "CATALOG: Foreign key value must be an integer (primary key)!" << std::endl;
+        LOG_WARN("Catalog", "Foreign key value must be an integer (primary key)");
         return false;
     }
 
@@ -568,7 +566,7 @@ std::vector<FKReference> Catalog::get_referencing_tables(const std::string &pare
             std::vector<ColumnDefinition> schema;
             std::string table_name_from_entry;
             if(!deserialize_catalog_entry(raw_data, root_page_id, created_at, version, schema, table_name_from_entry)){
-                std::cerr << "CATALOG: Failed to deserialize catalog entry!" << std::endl;
+                LOG_ERROR("Catalog", "Failed to deserialize catalog entry");
                 continue;
             }
             // Resolve table name -prefer the name embedded in the entry,
@@ -584,8 +582,7 @@ std::vector<FKReference> Catalog::get_referencing_tables(const std::string &pare
             }
 
             if (table_name.empty()) {
-                std::cerr << "CATALOG: Could not resolve name for table with root page "
-                          << root_page_id << "; skipping FK check.\n";
+                LOG_WARN("Catalog", "Could not resolve name for table with root page " + std::to_string(root_page_id) + "; skipping FK check");
                 continue;
             }
 

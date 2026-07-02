@@ -1,5 +1,6 @@
 #include "BTree.h"
 #include "SlottedPage.h"
+#include "Logger.h"
 
 void BTree::split_leaf_node(uint32_t old_node_id)
 {
@@ -24,15 +25,11 @@ void BTree::split_leaf_node(uint32_t old_node_id)
 
     auto [new_median_key, new_median_row_id] = new_sp.get_first_key_and_row_id();
     insert_into_parent(old_raw_page, old_node_id, new_median_key, new_median_row_id, new_node_id);
-    std::cout << "split!";
-
+    LOG_DEBUG("BTree", "Leaf split done");
 }
 
 void BTree::split_internal_node(uint32_t old_node_id)
 {
-
-    // Creating all cells vector for the old node
-    // We will need this to move the right half of the cells to the new node, and also to find the median key to push up
     SlottedPage old_sp(pager.get_page(old_node_id)->data);
     PageHeader* old_h = old_sp.header();
     Page* old_raw_page = pager.get_page(old_node_id);
@@ -46,7 +43,6 @@ void BTree::split_internal_node(uint32_t old_node_id)
 
     uint32_t old_right_child = old_h->right_child_page_id;
 
-    // Find the median key and the index of the median key
     int total = all_cells.size();
     int median_index = total / 2;
     uint32_t median_key = all_cells[median_index].key;
@@ -75,7 +71,6 @@ void BTree::split_internal_node(uint32_t old_node_id)
     }
 
     insert_into_parent(old_raw_page, old_node_id, median_key, median_row_id, new_node_id);
-
 }
 
 bool BTree::insert_into_leaf(uint32_t leaf_id, uint32_t key, uint32_t row_id, const void *data, uint16_t size)
@@ -95,11 +90,6 @@ void BTree::insert_into_parent(Page* old_node, uint32_t old_node_id, uint32_t ke
     SlottedPage old_sp(old_node->data);
     PageHeader* old_h = old_sp.header();
 
-    /*
-
-    CASE OLD NODE WAS ROOT
-
-    */
     if (old_h->is_root) {
         uint32_t new_root_id = pager.allocate_new_page();
         Page* new_root_page = pager.get_page(new_root_id);
@@ -112,14 +102,7 @@ void BTree::insert_into_parent(Page* old_node, uint32_t old_node_id, uint32_t ke
         new_root_sp.header()->free_end = PAGE_SIZE;
         new_root_sp.header()->parent_page_id = 0;
 
-        /*
-        We now set keys < then key to the old and >= into the new node.
-
-        We first set right node child, then we set the left child, after that
-        we update parents of children
-        */
         new_root_sp.header()->right_child_page_id = new_node_id;
-
         new_root_sp.insert_internal_cell(key, row_id, old_node_id);
 
         old_h->is_root = false;
@@ -141,38 +124,26 @@ void BTree::insert_into_parent(Page* old_node, uint32_t old_node_id, uint32_t ke
         new_root_page->is_dirty = true;
         new_child_page->is_dirty = true;
 
-        std::cout << "BTREE: ROOT SPLIT DONE! New Root ID: " << new_root_id << std::endl;
+        LOG_DEBUG("BTree", "Root split done. New root ID: " + std::to_string(new_root_id));
         return;
     }
 
-    /*
-    CASE 2 OLD NODE HAD A PARENT
-    */
     uint32_t parent_id = old_h->parent_page_id;
     Page* parent_page = pager.get_page(parent_id);
     SlottedPage parent_sp(parent_page->data);
     PageHeader* parent_h = parent_sp.header();
 
-
-    /*
-    We check if there is space inside of its parent, if not
-    we split parent recursively, but we dont do that as of now
-    */
-
     uint16_t space_needed = sizeof(InternalNodeCell) + sizeof(uint16_t);
     if (parent_h->free_end - parent_h->free_start < space_needed) {
         split_internal_node(parent_id);
-        // split_internal_node updated old_h->parent_page_id to the correct new parent
         parent_id = old_h->parent_page_id;
         parent_page = pager.get_page(parent_id);
         parent_sp = SlottedPage(parent_page->data);
         parent_h = parent_sp.header();
     }
 
-
     if (parent_h->right_child_page_id == old_node_id) {
         parent_h->right_child_page_id = new_node_id;
-
         parent_sp.insert_internal_cell(key, row_id, old_node_id);
     }
     else {
@@ -187,7 +158,7 @@ void BTree::insert_into_parent(Page* old_node, uint32_t old_node_id, uint32_t ke
             }
         }
         if(!found){
-            std::cerr << "ERROR: COULDN'T FIND THE OLD NODE IN THE PARENT DURING INSERT INTO PARENT\n";
+            LOG_PANIC("BTree", "Couldn't find old node in parent during insert_into_parent");
             return;
         }
         parent_sp.insert_internal_cell(key, row_id, old_node_id);
@@ -206,7 +177,7 @@ uint32_t BTree::find_leaf_node(uint32_t leaf_key, uint32_t row_id)
     uint32_t current_page_id = root_page_id;
 
     while(true){
-        std::cout << "BTREE: Currently on page: " << current_page_id << std::endl;
+        LOG_DEBUG("BTree", "Currently on page: " + std::to_string(current_page_id));
         Page* page = pager.get_page(current_page_id);
         SlottedPage sp(page->data);
 
@@ -216,7 +187,7 @@ uint32_t BTree::find_leaf_node(uint32_t leaf_key, uint32_t row_id)
             return current_page_id;
         }
 
-        std::cout << "BTREE: Didn't find key at the current page, looking internally...";
+        LOG_DEBUG("BTree", "Didn't find key at current page, descending into internal node");
         current_page_id = sp.lookup_internal(leaf_key, row_id);
     }
 }
@@ -225,9 +196,8 @@ BTree::BTree(Pager &p) : pager(p), use_catalog_root(false)
 {
     this->root_page_id = p.get_root_page_id();
 
-
     if(root_page_id == 0){
-        std::cout << "BTREE: Initializing new database...\n";
+        LOG_DEBUG("BTree", "Initializing new database");
 
         uint32_t new_page_id = p.allocate_new_page();
         p.set_root_page_id(new_page_id);
@@ -246,9 +216,9 @@ BTree::BTree(Pager& p, uint32_t explicit_root_page_id, bool is_catalog)
 
 bool BTree::insert(uint32_t key, uint32_t row_id, const void *data, uint16_t size)
 {
-    uint16_t record_size = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint16_t) + size + sizeof(uint16_t); // key + row_id + size + data + pointer
+    uint16_t record_size = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint16_t) + size + sizeof(uint16_t);
     if(record_size > PAGE_SIZE - sizeof(PageHeader) - sizeof(uint16_t)){
-        std::cerr << "ERROR: Record too large to fit in a page! Size: " << size << std::endl;
+        LOG_ERROR("BTree", "Record too large to fit in a page. Size: " + std::to_string(size));
         return false;
     }
 
@@ -261,22 +231,22 @@ bool BTree::insert(uint32_t key, uint32_t row_id, const void *data, uint16_t siz
         SlottedPage sp(page->data);
 
         if(sp.insert_record(key, row_id, data, size)){
-            std::cout << "BTREE: inserting key " << key << " row_id " << row_id << " into node " << leaf_node_id << std::endl;
+            LOG_DEBUG("BTree", "Inserted key " + std::to_string(key) + " row_id " + std::to_string(row_id) + " into node " + std::to_string(leaf_node_id));
             page->is_dirty = true;
             return true;
         }
 
-        std::cout << "BTREE: No space in leaf " << leaf_node_id << ", splitting... (attempt " << (attempt + 1) << ")" << std::endl;
+        LOG_DEBUG("BTree", "No space in leaf " + std::to_string(leaf_node_id) + ", splitting (attempt " + std::to_string(attempt + 1) + ")");
         split_leaf_node(leaf_node_id);
     }
 
-    std::cerr << "ERROR: Failed to insert key " << key << " after " << MAX_RETRIES << " split attempts!" << std::endl;
+    LOG_PANIC("BTree", "Failed to insert key " + std::to_string(key) + " after " + std::to_string(MAX_RETRIES) + " split attempts");
     return false;
 }
 
 std::optional<std::vector<char>> BTree::find(uint32_t key, uint32_t row_id)
 {
-    std::cout << "BTREE: Searching for key " << key << " row_id " << row_id << std::endl;
+    LOG_DEBUG("BTree", "Searching for key " + std::to_string(key) + " row_id " + std::to_string(row_id));
 
     uint32_t leaf_node_id = find_leaf_node(key, row_id);
 
@@ -286,9 +256,9 @@ std::optional<std::vector<char>> BTree::find(uint32_t key, uint32_t row_id)
     std::optional<std::vector<char>> result = sp.get_record(key, row_id, pager);
 
     if(result.has_value()){
-        std::cout << "BTREE: Found record in node " << leaf_node_id << std::endl;
+        LOG_DEBUG("BTree", "Found record in node " + std::to_string(leaf_node_id));
     } else {
-        std::cout << "BTREE: Record not found" << std::endl;
+        LOG_DEBUG("BTree", "Record not found");
     }
 
     return result;
@@ -311,7 +281,7 @@ bool BTree::update(uint32_t key, uint32_t row_id, const void *data, uint16_t siz
 
     const std::vector<char>& old_data = old_record.value();
     if (!insert(key, row_id, old_data.data(), static_cast<uint16_t>(old_data.size()))) {
-        std::cerr << "ERROR: Update failed and rollback insert failed for key " << key << " row_id " << row_id << "\n";
+        LOG_PANIC("BTree", "Update failed and rollback insert failed for key " + std::to_string(key) + " row_id " + std::to_string(row_id));
     }
 
     return false;
@@ -333,7 +303,6 @@ bool BTree::remove(uint32_t key, uint32_t row_id)
 
 std::vector<uint32_t> BTree::find_range(uint32_t key) {
     std::vector<uint32_t> results;
-    // Navigate to the leaf that would contain (key, 0)
     uint32_t current_page_id = find_leaf_node(key, 0);
 
     while (current_page_id != 0) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Logger.h"
 #include <iostream>
 #include <vector>
 #include <unordered_map>
@@ -32,7 +33,7 @@ public:
 
     PageCache() : clock_hand(0), num_allocated_pages(0), hits(0), misses(0), evictions(0) {
         cache_buffer.reserve(CACHE_SIZE);
-        std::cout << "[CACHE] Initialized cache with capacity of " << CACHE_SIZE << " pages." << std::endl;
+        LOG_DEBUG("Cache", "Initialized buffer pool with capacity of " + std::to_string(CACHE_SIZE) + " pages");
     }
 
     Page* find_page(uint32_t page_id);

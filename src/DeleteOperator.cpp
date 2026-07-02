@@ -1,4 +1,5 @@
 #include "DeleteOperator.h"
+#include "Logger.h"
 #include <cstring>
 
 DeleteOperator::DeleteOperator(std::unique_ptr<Operator> child, Table* table, Catalog* catalog)
@@ -43,9 +44,7 @@ std::optional<Row> DeleteOperator::Next() {
                         if (child_cols[ci].fk_table == table_->get_name() &&
                             child_cols[ci].name == ref.fk_column_name &&
                             crow[ci] == pk_val) {
-                            std::cerr << "ERROR: FK constraint violation on DELETE - "
-                                      << "row with PK " << pk << " is still referenced by '"
-                                      << ref.child_table << "." << ref.fk_column_name << "'.\n";
+                            LOG_ERROR("Delete", "FK constraint violation — row with PK " + std::to_string(pk) + " is still referenced by '" + ref.child_table + "." + ref.fk_column_name + "'");
                             blocked = true;
                             break;
                         }
@@ -58,8 +57,7 @@ std::optional<Row> DeleteOperator::Next() {
         }
 
         if (!table_->remove_row(pk)) {
-            std::cerr << "ERROR: Failed to delete row with primary key " << pk
-                      << " from table '" << table_->get_name() << "'\n";
+            LOG_ERROR("Delete", "Failed to delete row with PK " + std::to_string(pk) + " from table '" + table_->get_name() + "'");
         } else {
             delete_count++;
             // Remove from secondary indexes
