@@ -27,10 +27,10 @@ private:
     ExecutionResult execute_delete(const DeleteStatement& stmt);
     ExecutionResult execute_create(const CreateTableStatement& stmt);
     ExecutionResult execute_create_index(const CreateIndexStatement& stmt);
+    ExecutionResult execute_drop_table(const DropTableStatement& stmt);
+    ExecutionResult execute_drop_index(const DropIndexStatement& stmt);
+    ExecutionResult execute_alter_table(const AlterTableStatement& stmt);
 
-    // try_extract_pk_from_where je ostavljen u Executoru jer je vrlo koristan
-    // za Planner da prepozna da li da kreira IndexScan umesto SeqScan + Filter.
-    // Iako sada ne koristimo IndexScan, ostavljen je za buduca prosirenja.
     std::optional<uint32_t> try_extract_pk_from_where(
         const std::optional<WhereClause>& where,
         const std::vector<ColumnDefinition>& schema) const;

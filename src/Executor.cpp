@@ -30,6 +30,12 @@ ExecutionResult Executor::execute(const Statement& stmt)
             return execute_create(s);
         else if constexpr (std::is_same_v<T, CreateIndexStatement>)
             return execute_create_index(s);
+        else if constexpr (std::is_same_v<T, DropTableStatement>)
+            return execute_drop_table(s);
+        else if constexpr (std::is_same_v<T, DropIndexStatement>)
+            return execute_drop_index(s);
+        else if constexpr (std::is_same_v<T, AlterTableStatement>)
+            return execute_alter_table(s);
         else
             return {false, "Unknown statement type"};
     }, stmt);
@@ -109,4 +115,48 @@ ExecutionResult Executor::execute_delete(const DeleteStatement& stmt)
     int deleted = std::get<int32_t>(result.value()[0]);
 
     return {true, std::to_string(deleted) + " row(s) deleted", {}, {}};
+}
+
+ExecutionResult Executor::execute_drop_table(const DropTableStatement& stmt)
+{
+    if (!catalog_.table_exists(stmt.table_name)) {
+        if (stmt.if_exists)
+            return {true, "Table '" + stmt.table_name + "' does not exist, skipped", {}, {}};
+        return {false, "Table '" + stmt.table_name + "' does not exist", {}, {}};
+    }
+    if (!catalog_.drop_table(stmt.table_name))
+        return {false, "Cannot drop table '" + stmt.table_name + "' (FK references exist)", {}, {}};
+    return {true, "Table '" + stmt.table_name + "' dropped", {}, {}};
+}
+
+ExecutionResult Executor::execute_drop_index(const DropIndexStatement& stmt)
+{
+    if (!catalog_.drop_index(stmt.index_name))
+        return {false, "Index '" + stmt.index_name + "' does not exist or could not be dropped", {}, {}};
+    return {true, "Index '" + stmt.index_name + "' dropped", {}, {}};
+}
+
+ExecutionResult Executor::execute_alter_table(const AlterTableStatement& stmt)
+{
+    using Action = AlterTableStatement::Action;
+    bool ok = false;
+    std::string msg;
+    switch (stmt.action) {
+        case Action::ADD_COLUMN:
+            ok  = catalog_.alter_table_add_column(stmt.table_name, stmt.new_col);
+            msg = ok ? "Column '" + stmt.new_col.name + "' added to '" + stmt.table_name + "'"
+                     : "Failed to add column";
+            break;
+        case Action::DROP_COLUMN:
+            ok  = catalog_.alter_table_drop_column(stmt.table_name, stmt.target_column);
+            msg = ok ? "Column '" + stmt.target_column + "' dropped from '" + stmt.table_name + "'"
+                     : "Failed to drop column (PK, FK reference, or not found)";
+            break;
+        case Action::RENAME_COLUMN:
+            ok  = catalog_.alter_table_rename_column(stmt.table_name, stmt.target_column, stmt.new_column_name);
+            msg = ok ? "Column '" + stmt.target_column + "' renamed to '" + stmt.new_column_name + "'"
+                     : "Failed to rename column (not found or name conflict)";
+            break;
+    }
+    return {ok, msg, {}, {}};
 }

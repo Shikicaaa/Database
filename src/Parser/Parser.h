@@ -67,6 +67,23 @@ struct CreateIndexStatement
     std::string column_name;
 };
 
+struct DropTableStatement {
+    std::string table_name;
+    bool if_exists = false;
+};
+
+struct DropIndexStatement {
+    std::string index_name;
+};
+
+struct AlterTableStatement {
+    enum class Action { ADD_COLUMN, DROP_COLUMN, RENAME_COLUMN } action;
+    std::string table_name;
+    ColumnDefinition new_col;
+    std::string target_column;
+    std::string new_column_name;
+};
+
 struct TableReference {
     std::string table_name;
     std::string alias;  // nullable
@@ -80,7 +97,10 @@ using Statement = std::variant<
     DeleteStatement,
     CreateTableStatement,
     CreateIndexStatement,
-    JoinStatement
+    JoinStatement,
+    DropTableStatement,
+    DropIndexStatement,
+    AlterTableStatement
 >;
 
 
@@ -106,10 +126,13 @@ private:
     UpdateStatement parse_update();
     DeleteStatement parse_delete();
     Statement parse_create();
+    Statement parse_drop();
+    Statement parse_alter();
     JoinStatement parse_join();
     WhereClause parse_where();
     Value parse_value();
     DataType parse_data_type();
+    ColumnDefinition parse_column_def();
     std::string parse_operator();
     std::pair<std::string, std::string> parse_qualified_identifier(); // returns {table_alias, column_name}
     DateTime parse_date_literal(const std::string& str);

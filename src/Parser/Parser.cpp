@@ -68,11 +68,13 @@ Statement Parser::parse_statement()
         case TokenType::UPDATE: return parse_update();
         case TokenType::DELETE: return parse_delete();
         case TokenType::CREATE: return parse_create();
-        case TokenType::JOIN:  return parse_join();
+        case TokenType::DROP:   return parse_drop();
+        case TokenType::ALTER:  return parse_alter();
+        case TokenType::JOIN:   return parse_join();
         default:
             throw std::runtime_error(
                 "Syntax error at line " + std::to_string(peek().line) +
-                ": expected SELECT/INSERT/UPDATE/DELETE/CREATE/JOIN, got '" +
+                ": expected SELECT/INSERT/UPDATE/DELETE/CREATE/DROP/ALTER/JOIN, got '" +
                 peek().value + "'");
     }
 }
@@ -375,54 +377,10 @@ Statement Parser::parse_create()
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
     expect(TokenType::LPAR, "expected '('");
 
-    // Ovde se cita definicija kolone do )
-    auto parse_column_def = [&]() {
-        ColumnDefinition col;
-
-        col.name = expect(TokenType::IDENTIFIER, "expected column name").value;
-        col.type = parse_data_type();
-
-        if (col.type == DataType::VARCHAR) {
-            if (match(TokenType::LPAR)) {
-                const Token& len_tok = expect(TokenType::NUMBER_LITERAL, "expected max length");
-                col.max_length = static_cast<uint16_t>(std::stoi(len_tok.value));
-                expect(TokenType::RPAR, "expected ')'");
-            } else {
-                col.max_length = 255; // default
-            }
-        }
-
-        col.is_primary_key = false;
-        col.is_nullable    = false;
-        col.is_unique      = false;
-
-        bool parsing_modifiers = true;
-        while (parsing_modifiers) {
-            if (check(TokenType::PRIMARY)) {
-                advance(); // PRIMARY
-                expect(TokenType::KEY, "expected KEY after PRIMARY");
-                col.is_primary_key = true;
-            } else if (match(TokenType::UNIQUE)) {
-                col.is_unique = true;
-            } else if (match(TokenType::NULLABLE)) {
-                col.is_nullable = true;
-            } else if (match(TokenType::REFERENCES)) {
-                col.fk_table = expect(TokenType::IDENTIFIER, "expected foreign key table name").value;
-                expect(TokenType::LPAR, "expected '(' after foreign key table name");
-                col.fk_column = expect(TokenType::IDENTIFIER, "expected foreign key column name").value;
-                expect(TokenType::RPAR, "expected ')' after foreign key column name");
-            } else {
-                parsing_modifiers = false;
-            }
-        }
-
-        stmt.columns.push_back(col);
-    };
-
-    parse_column_def();
+    stmt.columns.push_back(parse_column_def());
     while (match(TokenType::COMMA)) {
         if (check(TokenType::RPAR)) break;
-        parse_column_def();
+        stmt.columns.push_back(parse_column_def());
     }
 
     expect(TokenType::RPAR, "expected ')'");
@@ -444,8 +402,24 @@ WhereClause Parser::parse_where()
     auto [qualifier, column] = parse_qualified_identifier();
     wc.table_qualifier = qualifier;
     wc.column          = column;
-    wc.op     = parse_operator();
-    wc.value  = parse_value();
+
+    if (check(TokenType::IS)) {
+        advance(); // consume IS
+        if (check(TokenType::NOT)) {
+            advance(); // consume NOT
+            expect(TokenType::NULL_KW, "expected NULL after IS NOT");
+            wc.op    = "IS NOT NULL";
+            wc.value = std::monostate{};
+        } else {
+            expect(TokenType::NULL_KW, "expected NULL after IS");
+            wc.op    = "IS NULL";
+            wc.value = std::monostate{};
+        }
+        return wc;
+    }
+
+    wc.op    = parse_operator();
+    wc.value = parse_value();
 
     return wc;
 }
@@ -525,4 +499,106 @@ std::string Parser::parse_operator()
                 "Syntax error at line " + std::to_string(t.line) +
                 ": expected comparison operator, got '" + t.value + "'");
     }
+}
+
+ColumnDefinition Parser::parse_column_def()
+{
+    ColumnDefinition col;
+    col.name = expect(TokenType::IDENTIFIER, "expected column name").value;
+    col.type = parse_data_type();
+
+    if (col.type == DataType::VARCHAR) {
+        if (match(TokenType::LPAR)) {
+            const Token& len_tok = expect(TokenType::NUMBER_LITERAL, "expected max length");
+            col.max_length = static_cast<uint16_t>(std::stoi(len_tok.value));
+            expect(TokenType::RPAR, "expected ')'");
+        } else {
+            col.max_length = 255;
+        }
+    }
+
+    col.is_primary_key = false;
+    col.is_nullable = false;
+    col.is_unique = false;
+
+    bool parsing_modifiers = true;
+    while (parsing_modifiers) {
+        if (check(TokenType::PRIMARY)) {
+            advance();
+            expect(TokenType::KEY, "expected KEY after PRIMARY");
+            col.is_primary_key = true;
+        } else if (match(TokenType::UNIQUE)) {
+            col.is_unique = true;
+        } else if (match(TokenType::NULLABLE)) {
+            col.is_nullable = true;
+        } else if (match(TokenType::REFERENCES)) {
+            col.fk_table  = expect(TokenType::IDENTIFIER, "expected FK table name").value;
+            expect(TokenType::LPAR, "expected '(' after FK table name");
+            col.fk_column = expect(TokenType::IDENTIFIER, "expected FK column name").value;
+            expect(TokenType::RPAR, "expected ')' after FK column name");
+        } else {
+            parsing_modifiers = false;
+        }
+    }
+    return col;
+}
+
+Statement Parser::parse_drop()
+{
+    advance(); // consume DROP
+    if (check(TokenType::TABLE)) {
+        advance();
+        DropTableStatement stmt;
+        if (check(TokenType::IF)) {
+            advance();
+            expect(TokenType::EXISTS, "expected EXISTS after IF");
+            stmt.if_exists = true;
+        }
+        stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
+        return stmt;
+    }
+    if (check(TokenType::INDEX)) {
+        advance();
+        DropIndexStatement stmt;
+        stmt.index_name = expect(TokenType::IDENTIFIER, "expected index name").value;
+        return stmt;
+    }
+    throw std::runtime_error(
+        "Syntax error at line " + std::to_string(peek().line) +
+        ": expected TABLE or INDEX after DROP, got '" + peek().value + "'");
+}
+
+Statement Parser::parse_alter()
+{
+    advance(); // consume ALTER
+    expect(TokenType::TABLE, "expected TABLE after ALTER");
+    AlterTableStatement stmt;
+    stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
+
+    if (check(TokenType::ADD)) {
+        advance();
+        if (check(TokenType::COLUMN)) advance();
+        stmt.action  = AlterTableStatement::Action::ADD_COLUMN;
+        stmt.new_col = parse_column_def();
+        return stmt;
+    }
+    if (check(TokenType::DROP)) {
+        advance();
+        if (check(TokenType::COLUMN)) advance();
+        stmt.action        = AlterTableStatement::Action::DROP_COLUMN;
+        stmt.target_column = expect(TokenType::IDENTIFIER, "expected column name").value;
+        return stmt;
+    }
+    if (check(TokenType::RENAME)) {
+        advance();
+        if (check(TokenType::COLUMN)) advance();
+        stmt.action          = AlterTableStatement::Action::RENAME_COLUMN;
+        stmt.target_column   = expect(TokenType::IDENTIFIER, "expected old column name").value;
+        expect(TokenType::TO, "expected TO");
+        stmt.new_column_name = expect(TokenType::IDENTIFIER, "expected new column name").value;
+        return stmt;
+    }
+    throw std::runtime_error(
+        "Syntax error at line " + std::to_string(peek().line) +
+        ": expected ADD, DROP, or RENAME after ALTER TABLE name, got '" + peek().value + "'");
 }

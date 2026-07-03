@@ -380,3 +380,37 @@ uint32_t BTree::find_first_leaf_node(){
         current_page_id = cell->page_id;
     }
 }
+
+void BTree::free_pages_recursive(uint32_t page_id) {
+    Page* page = pager.get_page(page_id);
+    if (!page) return;
+    PageHeader* h = reinterpret_cast<PageHeader*>(page->data);
+    SlottedPage sp(page->data);
+    uint16_t* pointers = sp.get_cell_pointers();
+
+    if (h->node_type == LEAF) {
+        for (uint16_t i = 0; i < h->num_cells; i++) {
+            LeafCellHeader* lch = reinterpret_cast<LeafCellHeader*>(page->data + pointers[i]);
+            if (lch->flags & CELL_FLAG_OVERFLOW) {
+                uint32_t ovfl_id;
+                std::memcpy(&ovfl_id, page->data + pointers[i] + LEAF_CELL_HEADER_SIZE, sizeof(uint32_t));
+                SlottedPage::free_overflow_pages(ovfl_id, pager);
+            }
+        }
+    } else {
+        for (uint16_t i = 0; i < h->num_cells; i++) {
+            InternalNodeCell* cell = reinterpret_cast<InternalNodeCell*>(page->data + pointers[i]);
+            free_pages_recursive(cell->page_id);
+        }
+        if (h->right_child_page_id != 0) {
+            free_pages_recursive(h->right_child_page_id);
+        }
+    }
+    pager.free_page(page_id);
+}
+
+void BTree::free_all_pages() {
+    if (root_page_id == 0) return;
+    free_pages_recursive(root_page_id);
+    root_page_id = 0;
+}

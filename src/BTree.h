@@ -34,4 +34,9 @@ public:
     uint32_t get_root_page_id() const { return root_page_id; }
 
     Pager& get_pager() { return pager; }
+
+    void free_all_pages();
+private:
+    void free_pages_recursive(uint32_t page_id);
+public:
 };

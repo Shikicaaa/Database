@@ -99,6 +99,14 @@ public:
     std::vector<std::string> get_all_table_names();
     std::vector<IndexInfo>   get_all_indexes();
 
+    bool drop_table(const std::string& name);
+    bool drop_index(const std::string& index_name);
+    bool alter_table_add_column(const std::string& table_name, const ColumnDefinition& col);
+    bool alter_table_drop_column(const std::string& table_name, const std::string& col_name);
+    bool alter_table_rename_column(const std::string& table_name,
+                                   const std::string& old_name,
+                                   const std::string& new_name);
+
     // FK enforcement
     bool fk_value_exists(const std::string& table_name, const std::string& column_name, const Value& value);
 

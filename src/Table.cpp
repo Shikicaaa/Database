@@ -13,10 +13,15 @@ bool Table::insert_row(const Row &row)
     uint32_t primary_key = extract_primary_key(row);
 
     for (size_t i = 0; i < columns.size(); i++) {
-        if (columns[i].is_primary_key || columns[i].is_unique) {
-            if (columns[i].is_primary_key) {
-                if (find_row(primary_key).has_value()) {
-                    LOG_ERROR("Table", "Duplicate value for PRIMARY KEY/UNIQUE column '" + columns[i].name + "' with value " + std::to_string(primary_key));
+        if (columns[i].is_primary_key) {
+            if (find_row(primary_key).has_value()) {
+                LOG_ERROR("Table", "Duplicate PRIMARY KEY value " + std::to_string(primary_key) + " in column '" + columns[i].name + "'");
+                return false;
+            }
+        } else if (columns[i].is_unique && i < row.size() && !std::holds_alternative<std::monostate>(row[i])) {
+            for (const Row& existing : scan_all()) {
+                if (i < existing.size() && existing[i] == row[i]) {
+                    LOG_ERROR("Table", "Duplicate UNIQUE value in column '" + columns[i].name + "'");
                     return false;
                 }
             }
@@ -55,6 +60,19 @@ bool Table::update_row(uint32_t old_primary_key, const Row &new_row)
     }
 
     uint32_t new_primary_key = extract_primary_key(new_row);
+
+    for (size_t i = 0; i < columns.size(); i++) {
+        if (columns[i].is_unique && !columns[i].is_primary_key &&
+            i < new_row.size() && !std::holds_alternative<std::monostate>(new_row[i])) {
+            for (const Row& existing : scan_all()) {
+                if (extract_primary_key(existing) == old_primary_key) continue;
+                if (i < existing.size() && existing[i] == new_row[i]) {
+                    LOG_ERROR("Table", "UNIQUE constraint violation on column '" + columns[i].name + "'");
+                    return false;
+                }
+            }
+        }
+    }
 
     if (old_primary_key == new_primary_key) {
         std::vector<uint8_t> serialized_data = serializer.serialize(columns, new_row);

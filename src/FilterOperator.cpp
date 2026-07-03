@@ -67,6 +67,9 @@ bool FilterOperator::compare_values(const Value& row_val,
                               const std::string& op,
                               const Value& where_val) const
 {
+    if (op == "IS NULL")     return std::holds_alternative<std::monostate>(row_val);
+    if (op == "IS NOT NULL") return !std::holds_alternative<std::monostate>(row_val);
+
     auto cmp = [&op](const auto& a, const auto& b) -> bool {
         if (op == "=")  return a == b;
         if (op == "!=") return a != b;
