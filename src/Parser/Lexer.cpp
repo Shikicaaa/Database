@@ -237,15 +237,19 @@ TokenType Lexer::keyword_to_identifier(const std::string& upper)
     if(upper == "OUTER") return TokenType::OUTER;
     if(upper == "ON") return TokenType::ON;
     if(upper == "REFERENCES") return TokenType::REFERENCES;
-    if(upper == "INDEX")  return TokenType::INDEX;
-    if(upper == "ALTER")  return TokenType::ALTER;
-    if(upper == "ADD")    return TokenType::ADD;
+    if(upper == "INDEX") return TokenType::INDEX;
+    if(upper == "ALTER") return TokenType::ALTER;
+    if(upper == "ADD") return TokenType::ADD;
     if(upper == "COLUMN") return TokenType::COLUMN;
     if(upper == "RENAME") return TokenType::RENAME;
-    if(upper == "TO")     return TokenType::TO;
-    if(upper == "IF")     return TokenType::IF;
+    if(upper == "TO") return TokenType::TO;
+    if(upper == "IF") return TokenType::IF;
     if(upper == "EXISTS") return TokenType::EXISTS;
-    if(upper == "IS")     return TokenType::IS;
+    if(upper == "IS") return TokenType::IS;
+    if(upper == "BEGIN") return TokenType::BEGIN;
+    if(upper == "COMMIT") return TokenType::COMMIT;
+    if(upper == "ROLLBACK") return TokenType::ROLLBACK;
+    if(upper == "TRANSACTION") return TokenType::TRANSACTION;
 
     return TokenType::IDENTIFIER;
 }

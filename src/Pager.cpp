@@ -1,6 +1,7 @@
 #include "Pager.h"
 #include "SlottedPage.h"
 #include "Logger.h"
+#include "WALManager.h"
 #include <cstring>
 
 Pager::Pager(const std::string &fileName, const char* name){
@@ -169,4 +170,14 @@ void Pager::set_catalog_root_page_id(uint32_t new_root_id)
     file.seekp(0);
     file.write(reinterpret_cast<char*>(&db_header), sizeof(DBHeader));
     file.flush();
+}
+
+void Pager::flush_all_pages()
+{
+    page_cache.flush_all_dirty();
+}
+
+void Pager::set_wal_manager(WALManager* w)
+{
+    page_cache.set_wal_manager(w);
 }

@@ -1,5 +1,6 @@
 ﻿#include "Pager.h"
 #include "Catalog.h"
+#include "WALManager.h"
 #include "Parser/Lexer.h"
 #include "Parser/Parser.h"
 #include "Executor.h"
@@ -121,9 +122,12 @@ int main(int argc, char* argv[])
         }
     }
 
-    Pager   pager("database.db", "MyDB");
+    Pager pager("database.db", "MyDB");
+    WALManager wal("database.wal", PAGE_SIZE);
+    pager.set_wal_manager(&wal); // flush WAL before evicting dirty pages
     Catalog catalog(pager);
-    Executor executor(catalog);
+    wal.recover(catalog);
+    Executor executor(catalog, wal, pager);
 
     std::cout << "ShikiDB v1.0\n";
     std::cout << "Type 'exit' or 'quit' to close.\n\n";

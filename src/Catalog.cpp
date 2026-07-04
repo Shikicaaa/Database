@@ -745,6 +745,16 @@ Table* Catalog::get_table(const std::string& name) {
     return table_ptr;
 }
 
+Table* Catalog::get_table_by_root_page(uint32_t root_page_id)
+{
+    // Eagerly load every table so root_page_to_name_ is fully populated.
+    for (const auto& name : get_all_table_names())
+        get_table(name);
+    auto it = root_page_to_name_.find(root_page_id);
+    if (it == root_page_to_name_.end()) return nullptr;
+    return get_table(it->second);
+}
+
 bool Catalog::table_exists(const std::string& name) {
     // Check cache
     if (tables_cache.find(name) != tables_cache.end()) {
@@ -851,7 +861,7 @@ std::vector<FKReference> Catalog::get_referencing_tables(const std::string &pare
                 LOG_ERROR("Catalog", "Failed to deserialize catalog entry");
                 continue;
             }
-            // Resolve table name -prefer the name embedded in the entry,
+            // Resolve table name prefer the name embedded in the entry,
             // fall back to the in-memory reverse map,
             // and as a last resort fall back to the tables_cache name scan.
             std::string table_name = table_name_from_entry;
@@ -879,4 +889,50 @@ std::vector<FKReference> Catalog::get_referencing_tables(const std::string &pare
     }
 
     return references;
+}
+
+// table_locks_map_mutex_ is held only long enough to retrieve (or create)
+// the per table shared_mutex pointer;
+// the table mutex itself is then acquired
+// outside the map lock so we never hold two locks simultaneously.
+
+std::shared_mutex* Catalog::ensure_table_lock(const std::string& name)
+{
+    std::lock_guard<std::mutex> lk(table_locks_map_mutex_);
+    auto it = table_locks_.find(name);
+    if (it != table_locks_.end()) return it->second.get();
+    table_locks_[name] = std::make_unique<std::shared_mutex>();
+    return table_locks_[name].get();
+}
+
+void Catalog::lock_table_shared(const std::string& name)
+{
+    ensure_table_lock(name)->lock_shared();
+}
+
+void Catalog::lock_table_exclusive(const std::string& name)
+{
+    ensure_table_lock(name)->lock();
+}
+
+void Catalog::unlock_table_shared(const std::string& name)
+{
+    std::shared_mutex* m = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(table_locks_map_mutex_);
+        auto it = table_locks_.find(name);
+        if (it != table_locks_.end()) m = it->second.get();
+    }
+    if (m) m->unlock_shared();
+}
+
+void Catalog::unlock_table_exclusive(const std::string& name)
+{
+    std::shared_mutex* m = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(table_locks_map_mutex_);
+        auto it = table_locks_.find(name);
+        if (it != table_locks_.end()) m = it->second.get();
+    }
+    if (m) m->unlock();
 }

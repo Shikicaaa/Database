@@ -2,8 +2,10 @@
 #include "Logger.h"
 #include <cstring>
 
-DeleteOperator::DeleteOperator(std::unique_ptr<Operator> child, Table* table, Catalog* catalog)
-    : child_(std::move(child)), table_(table), catalog_(catalog) {
+DeleteOperator::DeleteOperator(std::unique_ptr<Operator> child, Table* table,
+                               Catalog* catalog, TxnContext* txn_ctx)
+    : child_(std::move(child)), table_(table), catalog_(catalog), txn_ctx_(txn_ctx)
+{
     dummy_schema_.push_back(ColumnDefinition{"deleted_rows", DataType::INT, false, false, false, 4});
 }
 
@@ -60,6 +62,17 @@ std::optional<Row> DeleteOperator::Next() {
             LOG_ERROR("Delete", "Failed to delete row with PK " + std::to_string(pk) + " from table '" + table_->get_name() + "'");
         } else {
             delete_count++;
+            if (txn_ctx_) {
+                Serializer sr;
+                auto before_bytes = sr.serialize(table_->get_columns(), saved_row);
+                txn_ctx_->wal->log_delete(
+                    txn_ctx_->txn_id,
+                    table_->get_root_page_id(), 0,
+                    reinterpret_cast<const char*>(before_bytes.data()),
+                    static_cast<uint16_t>(before_bytes.size()));
+                txn_ctx_->undo_log->push_back({UndoOpType::DELETE_OP,
+                    table_->get_root_page_id(), before_bytes, {}});
+            }
             // Remove from secondary indexes
             if (catalog_) {
                 auto indexes = catalog_->get_indexes_for_table(table_->get_name());

@@ -29,7 +29,10 @@ struct Page{
     bool is_dirty = false;
     bool reference_bit = 0;
     uint16_t access_count = 0;
+    uint64_t page_lsn = 0; // highest WAL LSN that modified this page
 };
+
+class WALManager;
 
 class Pager{
     private:
@@ -58,5 +61,7 @@ class Pager{
 
         void set_root_page_id(uint32_t new_root_id);
         void set_catalog_root_page_id(uint32_t new_root_id);
-        
+
+        void flush_all_pages();
+        void set_wal_manager(WALManager* w);
 };

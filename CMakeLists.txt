@@ -76,6 +76,9 @@ add_executable (
   "src/SecondaryIndexScanOperator.cpp"
   "src/Logger.h"
   "src/Logger.cpp"
+  "src/WALManager.h"
+  "src/WALManager.cpp"
+  "src/Transaction.h"
 )
 
 

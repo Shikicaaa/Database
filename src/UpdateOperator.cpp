@@ -4,8 +4,12 @@
 #include <algorithm>
 #include <cstring>
 
-UpdateOperator::UpdateOperator(std::unique_ptr<Operator> child, Table* table, const std::vector<std::pair<std::string, Value>>& set_clauses, Catalog* catalog) 
-    : child_(std::move(child)), table_(table),  set_clauses_(set_clauses), catalog_(catalog) {
+UpdateOperator::UpdateOperator(std::unique_ptr<Operator> child, Table* table,
+                               const std::vector<std::pair<std::string, Value>>& set_clauses,
+                               Catalog* catalog, TxnContext* txn_ctx)
+    : child_(std::move(child)), table_(table), set_clauses_(set_clauses),
+      catalog_(catalog), txn_ctx_(txn_ctx)
+{
     dummy_schema_.push_back(ColumnDefinition{"updated_rows", DataType::INT, false, false, false, 4});
 }
 
@@ -91,6 +95,20 @@ std::optional<Row> UpdateOperator::Next() {
             LOG_ERROR("Update", "Failed to update row with PK " + std::to_string(pk) + " in table '" + table_->get_name() + "'");
         } else {
             update_count++;
+            if (txn_ctx_) {
+                Serializer sr;
+                auto before_bytes = sr.serialize(table_->get_columns(), old_row);
+                auto after_bytes = sr.serialize(table_->get_columns(), new_row);
+                txn_ctx_->wal->log_update(
+                    txn_ctx_->txn_id,
+                    table_->get_root_page_id(), 0,
+                    reinterpret_cast<const char*>(before_bytes.data()),
+                    static_cast<uint16_t>(before_bytes.size()),
+                    reinterpret_cast<const char*>(after_bytes.data()),
+                    static_cast<uint16_t>(after_bytes.size()));
+                txn_ctx_->undo_log->push_back({UndoOpType::UPDATE,
+                    table_->get_root_page_id(), before_bytes, after_bytes});
+            }
             // Maintain secondary indexes for changed indexed columns
             if (catalog_) {
                 auto indexes = catalog_->get_indexes_for_table(table_->get_name());

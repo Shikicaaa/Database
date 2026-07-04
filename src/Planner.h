@@ -3,16 +3,20 @@
 #include "Catalog.h"
 #include "LogicalPlan.h"
 #include "Operator.h"
+#include "TxnContext.h"
 #include <memory>
 
 class Planner {
 public:
     explicit Planner(Catalog& catalog) : catalog_(catalog) {}
 
+    void set_txn_context(TxnContext* ctx) { txn_ctx_ = ctx; }
+
     std::unique_ptr<Operator> create_plan(const Statement& stmt);
 
 private:
-    Catalog& catalog_;
+    Catalog&    catalog_;
+    TxnContext* txn_ctx_ = nullptr;
     
     std::unique_ptr<Operator> plan_select(const SelectStatement& stmt);
     std::unique_ptr<Operator> plan_insert(const InsertStatement& stmt);

@@ -3,6 +3,7 @@
 #include "Table.h"
 #include "BTree.h"
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -38,6 +39,10 @@ private:
 
     mutable std::shared_mutex rw_mutex_;
     mutable std::mutex cache_mutex_;
+
+    mutable std::mutex table_locks_map_mutex_;
+    std::unordered_map<std::string, std::unique_ptr<std::shared_mutex>> table_locks_;
+    std::shared_mutex* ensure_table_lock(const std::string& name);
 
     static uint32_t hash_table_name(const std::string& name);
     void ensure_indexes_loaded_locked();
@@ -82,10 +87,17 @@ public:
     ReadLock  acquire_read()  const { return ReadLock(rw_mutex_);  }
     WriteLock acquire_write()       { return WriteLock(rw_mutex_); }
 
+    // Locks are held until the transaction COMMIT or ROLLBACK
+    void lock_table_shared(const std::string& name);
+    void lock_table_exclusive(const std::string& name);
+    void unlock_table_shared(const std::string& name);
+    void unlock_table_exclusive(const std::string& name);
+
     Catalog(Pager& p);
 
     bool create_table(const std::string& name, const std::vector<ColumnDefinition>& cols);
     Table* get_table(const std::string& name);
+    Table* get_table_by_root_page(uint32_t root_page_id); // used by recovery + ROLLBACK undo
     bool table_exists(const std::string& name);
 
     // Secondary indexes

@@ -11,6 +11,7 @@
 #include <mutex>
 
 struct Page;
+class WALManager;
 
 const uint32_t CACHE_SIZE = 128;
 
@@ -24,12 +25,14 @@ class PageCache
 
     mutable std::mutex cache_mutex;
 
+    WALManager* wal_manager_ = nullptr;
     uint64_t hits;
     uint64_t misses;
     uint64_t evictions;
 
 public:
     std::function<void(uint32_t, const char*)> on_evict;
+    void set_wal_manager(WALManager* w) { wal_manager_ = w; }
 
     PageCache() : clock_hand(0), num_allocated_pages(0), hits(0), misses(0), evictions(0) {
         cache_buffer.reserve(CACHE_SIZE);
@@ -42,6 +45,7 @@ public:
 
     void mark_dirty(uint32_t page_id);
     void flush_page(uint32_t page_id);
+    void flush_all_dirty();
     void shutdown();
 
     void print_stats() const {

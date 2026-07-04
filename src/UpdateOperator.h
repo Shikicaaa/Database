@@ -3,6 +3,7 @@
 #include "Table.h"
 #include "Parser/Parser.h"
 #include "Catalog.h"
+#include "TxnContext.h"
 #include <memory>
 
 class UpdateOperator : public Operator {
@@ -10,7 +11,7 @@ public:
     UpdateOperator(
         std::unique_ptr<Operator> child, Table* table,
         const std::vector<std::pair<std::string, Value>>& set_clauses,
-        Catalog* catalog = nullptr
+        Catalog* catalog = nullptr, TxnContext* txn_ctx = nullptr
     );
     
     void Init() override;
@@ -19,6 +20,7 @@ public:
 
     private:
     Catalog* catalog_;
+    TxnContext* txn_ctx_ = nullptr;
     Table* table_;
     std::unique_ptr<Operator> child_;
     std::vector<std::pair<std::string, Value>> set_clauses_;

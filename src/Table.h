@@ -31,4 +31,5 @@ class Table {
         const std::string& get_name() const { return name; }
         BTree& get_btree() { return btree; }
         Serializer get_serializer() { return serializer; }
+        uint32_t get_root_page_id() const { return btree.get_root_page_id(); }
 };

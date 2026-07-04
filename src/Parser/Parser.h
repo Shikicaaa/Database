@@ -86,9 +86,12 @@ struct AlterTableStatement {
 
 struct TableReference {
     std::string table_name;
-    std::string alias;  // nullable
+    std::string alias;
 };
 
+struct BeginStatement    {};
+struct CommitStatement   {};
+struct RollbackStatement {};
 
 using Statement = std::variant<
     SelectStatement,
@@ -100,7 +103,10 @@ using Statement = std::variant<
     JoinStatement,
     DropTableStatement,
     DropIndexStatement,
-    AlterTableStatement
+    AlterTableStatement,
+    BeginStatement,
+    CommitStatement,
+    RollbackStatement
 >;
 
 
@@ -136,6 +142,10 @@ private:
     std::string parse_operator();
     std::pair<std::string, std::string> parse_qualified_identifier(); // returns {table_alias, column_name}
     DateTime parse_date_literal(const std::string& str);
+
+    BeginStatement    parse_begin();
+    CommitStatement   parse_commit();
+    RollbackStatement parse_rollback();
 public:
     explicit Parser(std::vector<Token> tokeni) : tokeni(std::move(tokeni)) {}
 

@@ -54,6 +54,7 @@ lib/
 /build*/       # Generic build directories
 
 *.db
+*.wal
 *.exe
 
 *CLAUDE*

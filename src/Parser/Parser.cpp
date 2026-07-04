@@ -69,12 +69,15 @@ Statement Parser::parse_statement()
         case TokenType::DELETE: return parse_delete();
         case TokenType::CREATE: return parse_create();
         case TokenType::DROP:   return parse_drop();
-        case TokenType::ALTER:  return parse_alter();
-        case TokenType::JOIN:   return parse_join();
+        case TokenType::ALTER:    return parse_alter();
+        case TokenType::JOIN:     return parse_join();
+        case TokenType::BEGIN:    return parse_begin();
+        case TokenType::COMMIT:   return parse_commit();
+        case TokenType::ROLLBACK: return parse_rollback();
         default:
             throw std::runtime_error(
                 "Syntax error at line " + std::to_string(peek().line) +
-                ": expected SELECT/INSERT/UPDATE/DELETE/CREATE/DROP/ALTER/JOIN, got '" +
+                ": expected statement keyword, got '" +
                 peek().value + "'");
     }
 }
@@ -601,4 +604,25 @@ Statement Parser::parse_alter()
     throw std::runtime_error(
         "Syntax error at line " + std::to_string(peek().line) +
         ": expected ADD, DROP, or RENAME after ALTER TABLE name, got '" + peek().value + "'");
+}
+
+BeginStatement Parser::parse_begin()
+{
+    advance(); // consume BEGIN
+    match(TokenType::TRANSACTION);
+    return BeginStatement{};
+}
+
+CommitStatement Parser::parse_commit()
+{
+    advance(); // consume COMMIT
+    match(TokenType::TRANSACTION);
+    return CommitStatement{};
+}
+
+RollbackStatement Parser::parse_rollback()
+{
+    advance(); // consume ROLLBACK
+    match(TokenType::TRANSACTION);
+    return RollbackStatement{};
 }

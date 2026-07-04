@@ -3,11 +3,13 @@
 #include "Table.h"
 #include "Serializer.h"
 #include "Catalog.h"
+#include "TxnContext.h"
 #include <memory>
 
 class InsertOperator : public Operator {
 public:
-    InsertOperator(Table* table, std::unique_ptr<Operator> child, Catalog* catalog = nullptr);
+    InsertOperator(Table* table, std::unique_ptr<Operator> child,
+                   Catalog* catalog = nullptr, TxnContext* txn_ctx = nullptr);
 
     void Init() override;
     std::optional<Row> Next() override;
@@ -17,6 +19,7 @@ private:
     Table* table_;
     std::unique_ptr<Operator> child_;
     Catalog* catalog_;
+    TxnContext* txn_ctx_ = nullptr;
 
     std::vector<ColumnDefinition> dummy_schema_;
 

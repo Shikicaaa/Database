@@ -3,8 +3,10 @@
 #include "Logger.h"
 #include <cstring>
 
-InsertOperator::InsertOperator(Table* table, std::unique_ptr<Operator> child, Catalog* catalog)
-    : table_(table), child_(std::move(child)), catalog_(catalog), has_executed_(false) 
+InsertOperator::InsertOperator(Table* table, std::unique_ptr<Operator> child,
+                               Catalog* catalog, TxnContext* txn_ctx)
+    : table_(table), child_(std::move(child)), catalog_(catalog),
+      txn_ctx_(txn_ctx), has_executed_(false)
 {
     dummy_schema_ = table_->get_columns();
 }
@@ -50,6 +52,17 @@ std::optional<Row> InsertOperator::Next() {
             LOG_ERROR("Insert", "Failed to insert row into table '" + table_->get_name() + "'");
         } else {
             row_count++;
+            if (txn_ctx_) {
+                Serializer sr;
+                auto after_bytes = sr.serialize(table_->get_columns(), coerced);
+                txn_ctx_->wal->log_insert(
+                    txn_ctx_->txn_id,
+                    table_->get_root_page_id(), 0,
+                    reinterpret_cast<const char*>(after_bytes.data()),
+                    static_cast<uint16_t>(after_bytes.size()));
+                txn_ctx_->undo_log->push_back({UndoOpType::INSERT,
+                    table_->get_root_page_id(), {}, after_bytes});
+            }
             if (catalog_) {
                 auto indexes = catalog_->get_indexes_for_table(table_->get_name());
                 const auto& cols = table_->get_columns();

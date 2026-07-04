@@ -247,7 +247,7 @@ std::unique_ptr<Operator> Planner::plan_insert(const InsertStatement& stmt) {
     rows.push_back(stmt.values);
 
     auto values_op = std::make_unique<ValuesOperator>(rows, table->get_columns());
-    return std::make_unique<InsertOperator>(table, std::move(values_op), &catalog_);
+    return std::make_unique<InsertOperator>(table, std::move(values_op), &catalog_, txn_ctx_);
 }
 
 std::unique_ptr<Operator> Planner::plan_update(const UpdateStatement& stmt) {
@@ -262,7 +262,7 @@ std::unique_ptr<Operator> Planner::plan_update(const UpdateStatement& stmt) {
     std::unique_ptr<LogicalNode> optimized_plan = optimize_select(std::move(filter));
     std::unique_ptr<Operator> child = create_physical_plan(std::move(optimized_plan));
 
-    return std::make_unique<UpdateOperator>(std::move(child), table, stmt.set_clauses, &catalog_);
+    return std::make_unique<UpdateOperator>(std::move(child), table, stmt.set_clauses, &catalog_, txn_ctx_);
 }
 
 std::unique_ptr<Operator> Planner::plan_delete(const DeleteStatement& stmt) {
@@ -277,7 +277,7 @@ std::unique_ptr<Operator> Planner::plan_delete(const DeleteStatement& stmt) {
     std::unique_ptr<LogicalNode> optimized_plan = optimize_select(std::move(filter));
     std::unique_ptr<Operator> child = create_physical_plan(std::move(optimized_plan));
 
-    return std::make_unique<DeleteOperator>(std::move(child), table, &catalog_);
+    return std::make_unique<DeleteOperator>(std::move(child), table, &catalog_, txn_ctx_);
 }
 
 std::optional<uint32_t> Planner::try_extract_pk_from_where(
