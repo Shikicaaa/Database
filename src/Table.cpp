@@ -80,7 +80,7 @@ bool Table::update_row(uint32_t old_primary_key, const Row &new_row)
     }
 
     if (find_row(new_primary_key).has_value()) {
-        LOG_ERROR("Table", "Duplicate value for PRIMARY KEY " + std::to_string(new_primary_key) + " — cannot change PK to an existing value");
+        LOG_ERROR("Table", "Duplicate value for PRIMARY KEY " + std::to_string(new_primary_key) + " - cannot change PK to an existing value");
         return false;
     }
 
@@ -91,7 +91,7 @@ bool Table::update_row(uint32_t old_primary_key, const Row &new_row)
 
     std::vector<uint8_t> serialized_data = serializer.serialize(columns, new_row);
     if (!btree.insert(new_primary_key, 0, serialized_data.data(), serialized_data.size())) {
-        LOG_PANIC("Table", "update_row failed to insert under new PK " + std::to_string(new_primary_key) + "; row is lost — data inconsistency");
+        LOG_PANIC("Table", "update_row failed to insert under new PK " + std::to_string(new_primary_key) + "; row is lost - data inconsistency");
         return false;
     }
 

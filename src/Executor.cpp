@@ -10,7 +10,7 @@ Executor::Executor(Catalog& catalog, WALManager& wal, Pager& pager)
 
 ExecutionResult Executor::execute(const Statement& stmt)
 {
-    // BEGIN/COMMIT/ROLLBACK don't touch the catalog — skip its lock entirely.
+    // BEGIN/COMMIT/ROLLBACK don't touch the catalog skip its lock entirely.
     const bool is_txn_ctrl = std::holds_alternative<BeginStatement>(stmt)
                           || std::holds_alternative<CommitStatement>(stmt)
                           || std::holds_alternative<RollbackStatement>(stmt);
@@ -99,7 +99,7 @@ TxnContext Executor::begin_statement_txn(Transaction& local_storage, bool& autoc
 
 void Executor::end_statement_txn(uint32_t txn_id, bool autocommit)
 {
-    if (!autocommit) return; // part of an explicit transaction — COMMIT/ROLLBACK handles it
+    if (!autocommit) return; // part of an explicit transaction COMMIT/ROLLBACK handles it
     uint64_t commit_lsn = wal_.log_commit(txn_id);
     wal_.flush_to_lsn(commit_lsn);   // durability: WAL on disk before declaring success
     pager_.flush_all_pages();        // force all data pages to disk
@@ -260,10 +260,18 @@ ExecutionResult Executor::execute_delete(const DeleteStatement& stmt)
     auto plan = planner.create_plan(stmt);
     plan->Init();
     auto result = plan->Next();
-    int deleted = std::get<int32_t>(result.value()[0]);
+    const Row& row = result.value();
+    int deleted = std::get<int32_t>(row[0]);
+    int blocked = row.size() > 1 ? std::get<int32_t>(row[1]) : 0;
 
     end_statement_txn(ctx.txn_id, autocommit);
-    return {true, std::to_string(deleted) + " row(s) deleted", {}, {}};
+
+    std::string msg = std::to_string(deleted) + " row(s) deleted";
+    if (blocked > 0) {
+        const std::string& reason = std::get<std::string>(row[2]);
+        msg += " (" + std::to_string(blocked) + " row(s) skipped - still referenced by " + reason + ")";
+    }
+    return {true, msg, {}, {}};
 }
 
 

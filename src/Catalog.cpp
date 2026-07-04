@@ -101,7 +101,7 @@ bool Catalog::deserialize_catalog_entry(
     const uint8_t* ptr  = base;
     const uint8_t* end  = base + data.size();
 
-    // type byte — must be a table entry
+    // type byte - must be a table entry
     if (*ptr++ != ENTRY_TYPE_TABLE) return false;
 
     root_page_id = (static_cast<uint32_t>(ptr[0]) << 24) |
@@ -851,7 +851,7 @@ std::vector<FKReference> Catalog::get_referencing_tables(const std::string &pare
                 raw_data.assign(data_ptr, data_ptr + leaf_ch->data_size);
             }
 
-            // Skip index entries (0x02) — they live in the same BTree but are not table entries
+            // Skip index entries (0x02) they live in the same BTree but are not table entries
             if (!raw_data.empty() && static_cast<uint8_t>(raw_data[0]) != ENTRY_TYPE_TABLE) continue;
 
             uint32_t root_page_id, created_at, version;

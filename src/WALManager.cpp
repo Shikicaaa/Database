@@ -259,7 +259,7 @@ void WALManager::recover(Catalog& catalog)
     }
 
     if (recs.empty()) {
-        LOG_DEBUG("WAL", "Recovery: no data records — nothing to redo/undo");
+        LOG_DEBUG("WAL", "Recovery: no data records - nothing to redo/undo");
         return;
     }
 

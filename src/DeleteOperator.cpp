@@ -1,12 +1,15 @@
 #include "DeleteOperator.h"
 #include "Logger.h"
 #include <cstring>
+#include <set>
 
 DeleteOperator::DeleteOperator(std::unique_ptr<Operator> child, Table* table,
                                Catalog* catalog, TxnContext* txn_ctx)
     : child_(std::move(child)), table_(table), catalog_(catalog), txn_ctx_(txn_ctx)
 {
     dummy_schema_.push_back(ColumnDefinition{"deleted_rows", DataType::INT, false, false, false, 4});
+    dummy_schema_.push_back(ColumnDefinition{"blocked_rows", DataType::INT, false, false, false, 4});
+    dummy_schema_.push_back(ColumnDefinition{"blocked_reason", DataType::VARCHAR, false, false, false, 200});
 }
 
 void DeleteOperator::Init() {
@@ -30,12 +33,15 @@ std::optional<Row> DeleteOperator::Next() {
     }
 
     int delete_count = 0;
+    int blocked_count = 0;
+    std::set<std::string> blocked_reasons;
     for (auto& [pk, saved_row] : pk_rows) {
         // reject delete if any child table still references this PK
         if (catalog_) {
             Value pk_val = Value(static_cast<int32_t>(pk));
             auto refs = catalog_->get_referencing_tables(table_->get_name());
             bool blocked = false;
+            std::string blocking_ref;
             for (const auto& ref : refs) {
                 Table* child_tbl = catalog_->get_table(ref.child_table);
                 if (!child_tbl) continue;
@@ -46,8 +52,9 @@ std::optional<Row> DeleteOperator::Next() {
                         if (child_cols[ci].fk_table == table_->get_name() &&
                             child_cols[ci].name == ref.fk_column_name &&
                             crow[ci] == pk_val) {
-                            LOG_ERROR("Delete", "FK constraint violation — row with PK " + std::to_string(pk) + " is still referenced by '" + ref.child_table + "." + ref.fk_column_name + "'");
+                            LOG_ERROR("Delete", "FK constraint violation - row with PK " + std::to_string(pk) + " is still referenced by '" + ref.child_table + "." + ref.fk_column_name + "'");
                             blocked = true;
+                            blocking_ref = ref.child_table + "." + ref.fk_column_name;
                             break;
                         }
                     }
@@ -55,7 +62,11 @@ std::optional<Row> DeleteOperator::Next() {
                 }
                 if (blocked) break;
             }
-            if (blocked) continue;
+            if (blocked) {
+                blocked_count++;
+                blocked_reasons.insert(blocking_ref);
+                continue;
+            }
         }
 
         if (!table_->remove_row(pk)) {
@@ -103,5 +114,11 @@ std::optional<Row> DeleteOperator::Next() {
     }
 
     has_executed_ = true;
-    return Row{Value(delete_count)};
+
+    std::string reason;
+    for (const auto& r : blocked_reasons) {
+        if (!reason.empty()) reason += ", ";
+        reason += r;
+    }
+    return Row{Value(delete_count), Value(blocked_count), Value(reason)};
 }

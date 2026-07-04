@@ -38,7 +38,7 @@ std::optional<Row> InsertOperator::Next() {
                 const Value& fk_val = coerced[i];
                 if(std::holds_alternative<std::monostate>(fk_val)) continue; // NULL are allowed for nullable FK columns
                 if(!catalog_->fk_value_exists(cols[i].fk_table, cols[i].fk_column, fk_val)){
-                    LOG_ERROR("Insert", "FK constraint violation — value for column '" + cols[i].name + "' does not exist in '" + cols[i].fk_table + "." + cols[i].fk_column + "'");
+                    LOG_ERROR("Insert", "FK constraint violation - value for column '" + cols[i].name + "' does not exist in '" + cols[i].fk_table + "." + cols[i].fk_column + "'");
                     fk_violation = true;
                     break;
                 }
