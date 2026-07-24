@@ -26,7 +26,7 @@ endif()
 include_directories(include)
 
 add_executable (
-  CMakeTarget
+  shikidb
   "src/main.cpp"
   "src/main.h"
   "src/Pager.cpp"
@@ -83,6 +83,6 @@ add_executable (
 
 
 find_library(READLINE_LIB readline REQUIRED)
-target_link_libraries(CMakeTarget PRIVATE ${READLINE_LIB})
+target_link_libraries(shikidb PRIVATE ${READLINE_LIB})
 
 # TODO: Add tests and install targets if needed.
