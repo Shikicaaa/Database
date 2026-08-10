@@ -204,6 +204,11 @@ bool JoinOperator::evaluate_condition(const Row& left_row, const Row& right_row)
     const Value& left_val = merged[left_index];
     const Value& right_val = merged[right_index];
 
+    if (std::holds_alternative<std::monostate>(left_val) ||
+        std::holds_alternative<std::monostate>(right_val)) {
+        return false;
+    }
+
     auto cmp = [&condition = condition_](const auto& a, const auto& b) -> bool {
         if (condition.op == "=")  return a == b;
         if (condition.op == "!=") return a != b;

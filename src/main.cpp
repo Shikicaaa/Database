@@ -135,7 +135,7 @@ int main(int argc, char* argv[])
     std::string input;
 
     while (true) {
-        const char* prompt = input.empty() ? "ShikiQL> " : "  -> ";
+        const char* prompt = input.empty() ? "ShikiDB> " : "  -> ";
         char* raw = readline(prompt);
 
         if (!raw) break; // EOF (Ctrl-D)

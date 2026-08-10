@@ -66,7 +66,7 @@ std::optional<Row> UpdateOperator::Next() {
                     !catalog_->fk_value_exists(table_->get_columns()[idx].fk_table,
                                                table_->get_columns()[idx].fk_column,
                                                coerced)) {
-                    LOG_ERROR("Update", "FK constraint violation — value for '" + col_name + "' does not exist in '" + table_->get_columns()[idx].fk_table + "." + table_->get_columns()[idx].fk_column + "'");
+                    LOG_ERROR("Update", "FK constraint violation - value for '" + col_name + "' does not exist in '" + table_->get_columns()[idx].fk_table + "." + table_->get_columns()[idx].fk_column + "'");
                     fk_violation = true;
                     break;
                 }
@@ -80,7 +80,7 @@ std::optional<Row> UpdateOperator::Next() {
                     auto refs = catalog_->get_referencing_tables(table_->get_name());
                     for (const auto& ref : refs) {
                         if (catalog_->child_has_fk_value(ref.child_table, ref.fk_column_name, old_pk_value)) {
-                            LOG_ERROR("Update", "Cannot update PK for column '" + col_name + "' — referenced by child table '" + ref.child_table + "' on column '" + ref.fk_column_name + "'");
+                            LOG_ERROR("Update", "Cannot update PK for column '" + col_name + "' - referenced by child table '" + ref.child_table + "' on column '" + ref.fk_column_name + "'");
                             fk_violation = true;
                             break;
                         }

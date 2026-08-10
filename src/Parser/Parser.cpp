@@ -1,37 +1,37 @@
 #include "Parser.h"
 #include <stdexcept>
 #include <ctime>
-
+ 
 const Token& Parser::peek() const
 {
     return tokeni[pos];
 }
-
+ 
 const Token& Parser::peek_next() const
 {
     if (pos+ 1 < tokeni.size()) return tokeni[pos+ 1];
     return tokeni.back();  // EOF
 }
-
+ 
 const Token& Parser::advance()
 {
     const Token& t = tokeni[pos];
     if (pos + 1 < tokeni.size()) ++pos;
     return t;
 }
-
+ 
 bool Parser::check(TokenType t) const
 {
     return peek().type == t;
 }
-
-
+ 
+ 
 bool Parser::match(TokenType t)
 {
     if (check(t)) { advance(); return true; }
     return false;
 }
-
+ 
 const Token& Parser::expect(TokenType t, const std::string& msg)
 {
     if (!check(t)) {
@@ -42,24 +42,24 @@ const Token& Parser::expect(TokenType t, const std::string& msg)
     }
     return advance();
 }
-
-
+ 
+ 
 Statement Parser::parse()
 {
     Statement stmt = parse_statement();
-
+ 
     // ; at the end of statement is optional
     match(TokenType::SEMICOLON);
-
+ 
     if (!check(TokenType::EOF_TOKEN)) {
         throw std::runtime_error(
             "Syntax error at line " + std::to_string(peek().line) +
             ": unexpected token '" + peek().value + "' after statement");
     }
-
+ 
     return stmt;
 }
-
+ 
 Statement Parser::parse_statement()
 {
     switch (peek().type) {
@@ -81,7 +81,7 @@ Statement Parser::parse_statement()
                 peek().value + "'");
     }
 }
-
+ 
 DateTime Parser::parse_date_literal(const std::string& s)
 {
     DateTime dt;
@@ -108,7 +108,7 @@ DateTime Parser::parse_date_literal(const std::string& s)
         throw std::runtime_error("Invalid date literal '" + s +
             "'. Supported formats: YYYY-MM-DD, DD-MM-YYYY, DD-MM-YY, with optional HH:MM:SS");
     }
-
+ 
     int year, month, day;
     if (a > 31) {
         // YYYY-MM-DD
@@ -149,7 +149,7 @@ DateTime Parser::parse_date_literal(const std::string& s)
  
     return dt;
 }
-
+ 
 std::pair<std::string, std::string> Parser::parse_qualified_identifier()
 {
     std::string first = expect(TokenType::IDENTIFIER, "expected identifier").value;
@@ -159,7 +159,7 @@ std::pair<std::string, std::string> Parser::parse_qualified_identifier()
     }
     return {"", first}; // No table alias
 }
-
+ 
 JoinStatement Parser::parse_join()
 {
     JoinStatement stmt;
@@ -198,7 +198,7 @@ JoinStatement Parser::parse_join()
  
     return stmt;
 }
-
+ 
 //  SELECT
 //
 //  Gramatika:
@@ -216,17 +216,19 @@ JoinStatement Parser::parse_join()
 SelectStatement Parser::parse_select()
 {
     SelectStatement stmt;
-
+ 
     expect(TokenType::SELECT, "expected SELECT");
-
+ 
     if (match(TokenType::STAR)) {
     } else {
-        stmt.columns.push_back(expect(TokenType::IDENTIFIER, "expected column name").value);
+        auto [q1, c1] = parse_qualified_identifier();
+        stmt.columns.push_back(q1.empty() ? c1 : q1 + "." + c1);
         while (match(TokenType::COMMA)) {
-            stmt.columns.push_back(expect(TokenType::IDENTIFIER, "expected column name").value);
+            auto [q, c] = parse_qualified_identifier();
+            stmt.columns.push_back(q.empty() ? c : q + "." + c);
         }
     }
-
+ 
     expect(TokenType::FROM, "expected FROM");
     
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
@@ -239,14 +241,14 @@ SelectStatement Parser::parse_select()
     {
         stmt.joins.push_back(parse_join());
     }
-
+ 
     if (check(TokenType::WHERE)) {
         stmt.where_clause = parse_where();
     }
-
+ 
     return stmt;
 }
-
+ 
 //  INSERT
 //
 //  Gramatika:
@@ -257,25 +259,25 @@ SelectStatement Parser::parse_select()
 InsertStatement Parser::parse_insert()
 {
     InsertStatement stmt;
-
+ 
     expect(TokenType::INSERT, "expected INSERT");
     expect(TokenType::INTO,   "expected INTO");
-
+ 
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
-
+ 
     expect(TokenType::VALUES, "expected VALUES");
     expect(TokenType::LPAR, "expected '('");
-
+ 
     stmt.values.push_back(parse_value());
     while (match(TokenType::COMMA)) {
         stmt.values.push_back(parse_value());
     }
-
+ 
     expect(TokenType::RPAR, "expected ')'");
-
+ 
     return stmt;
 }
-
+ 
 //  UPDATE
 //
 //  Gramatika:
@@ -286,30 +288,30 @@ InsertStatement Parser::parse_insert()
 UpdateStatement Parser::parse_update()
 {
     UpdateStatement stmt;
-
+ 
     expect(TokenType::UPDATE, "expected UPDATE");
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
     expect(TokenType::SET, "expected SET");
-
+ 
     auto parse_assignment = [&]() {
         std::string col = expect(TokenType::IDENTIFIER, "expected column name").value;
         expect(TokenType::EQ, "expected '='");
         Value val = parse_value();
         stmt.set_clauses.emplace_back(col, val);
     };
-
+ 
     parse_assignment();
     while (match(TokenType::COMMA)) {
         parse_assignment();
     }
-
+ 
     if (check(TokenType::WHERE)) {
         stmt.where_clause = parse_where();
     }
-
+ 
     return stmt;
 }
-
+ 
 //  DELETE
 //
 //  Gramatika:
@@ -320,18 +322,18 @@ UpdateStatement Parser::parse_update()
 DeleteStatement Parser::parse_delete()
 {
     DeleteStatement stmt;
-
+ 
     expect(TokenType::DELETE, "expected DELETE");
     expect(TokenType::FROM,   "expected FROM");
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
-
+ 
     if (check(TokenType::WHERE)) {
         stmt.where_clause = parse_where();
     }
-
+ 
     return stmt;
 }
-
+ 
 //  CREATE TABLE
 //
 //  Gramatika:
@@ -355,12 +357,12 @@ DeleteStatement Parser::parse_delete()
         UserID INT REFERENCES Users(ID),
         Total  NUMBER NULLABLE
     );
-
+ 
 */
 Statement Parser::parse_create()
 {
     expect(TokenType::CREATE, "expected CREATE");
-
+ 
     if (check(TokenType::INDEX)) {
         advance(); // consume INDEX
         CreateIndexStatement idx_stmt;
@@ -372,25 +374,25 @@ Statement Parser::parse_create()
         expect(TokenType::RPAR, "expected ')'");
         return idx_stmt;
     }
-
+ 
     expect(TokenType::TABLE, "expected TABLE or INDEX after CREATE");
-
+ 
     CreateTableStatement stmt;
-
+ 
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
     expect(TokenType::LPAR, "expected '('");
-
+ 
     stmt.columns.push_back(parse_column_def());
     while (match(TokenType::COMMA)) {
         if (check(TokenType::RPAR)) break;
         stmt.columns.push_back(parse_column_def());
     }
-
+ 
     expect(TokenType::RPAR, "expected ')'");
-
+ 
     return stmt;
 }
-
+ 
 //  WHERE
 //
 //  Gramatika:
@@ -400,12 +402,12 @@ Statement Parser::parse_create()
 WhereClause Parser::parse_where()
 {
     WhereClause wc;
-
+ 
     expect(TokenType::WHERE, "expected WHERE");
     auto [qualifier, column] = parse_qualified_identifier();
     wc.table_qualifier = qualifier;
     wc.column          = column;
-
+ 
     if (check(TokenType::IS)) {
         advance(); // consume IS
         if (check(TokenType::NOT)) {
@@ -420,18 +422,18 @@ WhereClause Parser::parse_where()
         }
         return wc;
     }
-
+ 
     wc.op    = parse_operator();
     wc.value = parse_value();
-
+ 
     return wc;
 }
-
+ 
 //   std::variant<std::monostate, int32_t, double, std::string, bool, DateUnix>
 Value Parser::parse_value()
 {
     const Token& t = peek();
-
+ 
     if (t.type == TokenType::NUMBER_LITERAL) {
         advance();
         // Ako ima br ima . onda je NUMBER inace je INTEGER
@@ -441,37 +443,37 @@ Value Parser::parse_value()
             return Value(static_cast<int32_t>(std::stoi(t.value)));
         }
     }
-
+ 
     if (t.type == TokenType::STRING_LITERAL) {
         advance();
         return Value(t.value);
     }
-
+ 
     if (t.type == TokenType::BOOL_LITERAL) {
         advance();
         return Value(t.value == "TRUE");
     }
-
+ 
     if (t.type == TokenType::NULL_KW) {
         advance();
         return Value(std::monostate{});
     }
-
+ 
     if (t.type == TokenType::DATE_KW) {
         advance();
         const Token& date_str = expect(TokenType::STRING_LITERAL, "expected date literal as string");
         return Value(parse_date_literal(date_str.value));
     }
-
+ 
     throw std::runtime_error(
         "Syntax error at line " + std::to_string(t.line) +
         ": expected a value (number, string, TRUE/FALSE/NULL), got '" + t.value + "'");
 }
-
+ 
 DataType Parser::parse_data_type()
 {
     const Token& t = peek();
-
+ 
     switch (t.type) {
         case TokenType::INT_KW:      advance(); return DataType::INT;
         case TokenType::NUMBER_KW:   advance(); return DataType::NUMBER;
@@ -485,11 +487,11 @@ DataType Parser::parse_data_type()
                 t.value + "'");
     }
 }
-
+ 
 std::string Parser::parse_operator()
 {
     const Token& t = peek();
-
+ 
     switch (t.type) {
         case TokenType::EQ:  advance(); return "=";
         case TokenType::NEQ: advance(); return "!=";
@@ -503,13 +505,13 @@ std::string Parser::parse_operator()
                 ": expected comparison operator, got '" + t.value + "'");
     }
 }
-
+ 
 ColumnDefinition Parser::parse_column_def()
 {
     ColumnDefinition col;
     col.name = expect(TokenType::IDENTIFIER, "expected column name").value;
     col.type = parse_data_type();
-
+ 
     if (col.type == DataType::VARCHAR) {
         if (match(TokenType::LPAR)) {
             const Token& len_tok = expect(TokenType::NUMBER_LITERAL, "expected max length");
@@ -519,11 +521,11 @@ ColumnDefinition Parser::parse_column_def()
             col.max_length = 255;
         }
     }
-
+ 
     col.is_primary_key = false;
     col.is_nullable = false;
     col.is_unique = false;
-
+ 
     bool parsing_modifiers = true;
     while (parsing_modifiers) {
         if (check(TokenType::PRIMARY)) {
@@ -545,7 +547,7 @@ ColumnDefinition Parser::parse_column_def()
     }
     return col;
 }
-
+ 
 Statement Parser::parse_drop()
 {
     advance(); // consume DROP
@@ -570,14 +572,14 @@ Statement Parser::parse_drop()
         "Syntax error at line " + std::to_string(peek().line) +
         ": expected TABLE or INDEX after DROP, got '" + peek().value + "'");
 }
-
+ 
 Statement Parser::parse_alter()
 {
     advance(); // consume ALTER
     expect(TokenType::TABLE, "expected TABLE after ALTER");
     AlterTableStatement stmt;
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
-
+ 
     if (check(TokenType::ADD)) {
         advance();
         if (check(TokenType::COLUMN)) advance();
@@ -605,21 +607,21 @@ Statement Parser::parse_alter()
         "Syntax error at line " + std::to_string(peek().line) +
         ": expected ADD, DROP, or RENAME after ALTER TABLE name, got '" + peek().value + "'");
 }
-
+ 
 BeginStatement Parser::parse_begin()
 {
     advance(); // consume BEGIN
     match(TokenType::TRANSACTION);
     return BeginStatement{};
 }
-
+ 
 CommitStatement Parser::parse_commit()
 {
     advance(); // consume COMMIT
     match(TokenType::TRANSACTION);
     return CommitStatement{};
 }
-
+ 
 RollbackStatement Parser::parse_rollback()
 {
     advance(); // consume ROLLBACK
