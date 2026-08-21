@@ -1,4 +1,5 @@
 #include "FilterOperator.h"
+#include "LikeOperator.h"
 #include "Logger.h"
 #include <algorithm>
 
@@ -69,6 +70,13 @@ bool FilterOperator::compare_values(const Value& row_val,
 {
     if (op == "IS NULL")     return std::holds_alternative<std::monostate>(row_val);
     if (op == "IS NOT NULL") return !std::holds_alternative<std::monostate>(row_val);
+
+    if (op == "LIKE" || op == "ILIKE") {
+        if (!std::holds_alternative<std::string>(row_val) || !std::holds_alternative<std::string>(where_val)) {
+            return false; // LIKE can only be applied to strings
+        }
+        return like_match(std::get<std::string>(where_val), std::get<std::string>(row_val), op == "ILIKE");
+    }
 
     auto cmp = [&op](const auto& a, const auto& b) -> bool {
         if (op == "=")  return a == b;
