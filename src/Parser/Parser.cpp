@@ -422,6 +422,12 @@ WhereClause Parser::parse_where()
         }
         return wc;
     }
+    if (check(TokenType::LIKE) || check(TokenType::ILIKE)) {
+        wc.op = (peek().type == TokenType::LIKE) ? "LIKE" : "ILIKE";
+        advance(); // consume LIKE or ILIKE
+        wc.value = parse_value(); // expects a string literal
+        return wc;
+    }
  
     wc.op    = parse_operator();
     wc.value = parse_value();

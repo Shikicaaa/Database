@@ -60,3 +60,4 @@ lib/
 *CLAUDE*
 
 .github
+concurrency_demo.cpp

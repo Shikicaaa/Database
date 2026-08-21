@@ -79,6 +79,8 @@ add_executable (
   "src/WALManager.h"
   "src/WALManager.cpp"
   "src/Transaction.h"
+  "src/LikeOperator.h"
+  "src/LikeOperator.cpp"
 )
 
 

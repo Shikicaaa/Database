@@ -250,6 +250,8 @@ TokenType Lexer::keyword_to_identifier(const std::string& upper)
     if(upper == "COMMIT") return TokenType::COMMIT;
     if(upper == "ROLLBACK") return TokenType::ROLLBACK;
     if(upper == "TRANSACTION") return TokenType::TRANSACTION;
+    if(upper == "LIKE") return TokenType::LIKE;
+    if(upper == "ILIKE") return TokenType::ILIKE;
 
     return TokenType::IDENTIFIER;
 }
