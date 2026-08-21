@@ -84,8 +84,6 @@ The core engine itself is standard C++ (STL containers, `<variant>`, `<optional>
 | **Windows with WSL** | Works | Runs like Linux inside a WSL distro |
 | **Windows (MinGW/Cygwin)** | Not tested | Haven't been tried with this project, but if someone is willing to take one for the team I won't stop you |
 
-*Tested on: `[TODO: e.g. Ubuntu 22.04, g++ 11.4]`*
-
 ## Building & Running
 
 This project uses **CMake** as its build system.
