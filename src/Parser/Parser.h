@@ -33,6 +33,7 @@ struct SelectStatement {
     std::vector<std::string> columns;
     std::vector<JoinStatement> joins;
     std::optional<WhereClause> where_clause;
+    std::optional<uint32_t> limit;
 };
 
 struct InsertStatement

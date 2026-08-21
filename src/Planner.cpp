@@ -9,6 +9,7 @@
 #include "UpdateOperator.h"
 #include "DeleteOperator.h"
 #include "LogicalPlan.h"
+#include "LimitOperator.h"
 #include "TypeCoercion.h"
 #include <variant>
 #include <cstring>
@@ -125,6 +126,10 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
 
     if (!stmt.columns.empty() && !(stmt.columns.size() == 1 && stmt.columns[0] == "*")) {
         current_op = std::make_unique<ProjectOperator>(std::move(current_op), stmt.columns);
+    }
+
+    if (stmt.limit.has_value()) {
+        current_op = std::make_unique<LimitOperator>(stmt.limit.value(), std::move(current_op));
     }
 
     return current_op;

@@ -252,6 +252,11 @@ TokenType Lexer::keyword_to_identifier(const std::string& upper)
     if(upper == "TRANSACTION") return TokenType::TRANSACTION;
     if(upper == "LIKE") return TokenType::LIKE;
     if(upper == "ILIKE") return TokenType::ILIKE;
+    if(upper == "LIMIT") return TokenType::LIMIT;
+    if(upper == "ORDER") return TokenType::ORDER;
+    if(upper == "BY") return TokenType::BY;
+    if(upper == "ASC") return TokenType::ASC;
+    if(upper == "DESC") return TokenType::DESC;
 
     return TokenType::IDENTIFIER;
 }

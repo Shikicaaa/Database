@@ -245,6 +245,10 @@ SelectStatement Parser::parse_select()
     if (check(TokenType::WHERE)) {
         stmt.where_clause = parse_where();
     }
+
+    if (match(TokenType::LIMIT)) {
+        stmt.limit = std::stoul(expect(TokenType::NUMBER_LITERAL, "expected number after LIMIT").value);
+    }
  
     return stmt;
 }

@@ -81,6 +81,8 @@ add_executable (
   "src/Transaction.h"
   "src/LikeOperator.h"
   "src/LikeOperator.cpp"
+  "src/LimitOperator.h"
+  "src/LimitOperator.cpp"
 )
 
 
