@@ -248,6 +248,15 @@ JoinStatement Parser::parse_join()
  
     return stmt;
 }
+
+HavingClause Parser::parse_having()
+{
+    HavingClause clause;
+    clause.item = parse_select_item();
+    clause.op = parse_operator();
+    clause.value = parse_value();
+    return clause;
+}
  
 //  SELECT
 //
@@ -298,6 +307,11 @@ SelectStatement Parser::parse_select()
         advance(); // consume GROUP
         expect(TokenType::BY, "expected BY after GROUP");
         stmt.group_by = parse_group_by();
+
+        if (check(TokenType::HAVING)) {
+            advance();
+            stmt.having_clause = parse_having();
+        }
     }
 
     if (check(TokenType::ORDER)) {

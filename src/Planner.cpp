@@ -138,7 +138,8 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
         current_op = std::make_unique<GroupByOperator>(
             std::move(current_op),
             stmt.group_by.value_or(std::vector<std::string>{}),
-            stmt.select_items);
+            stmt.select_items,
+            stmt.having_clause);
     } else if (!stmt.select_items.empty()) {
         current_op = std::make_unique<ProjectOperator>(std::move(current_op), stmt.select_items);
     }

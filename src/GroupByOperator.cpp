@@ -92,6 +92,36 @@ bool GroupByOperator::value_less_than(const Value& a, const Value& b) const
     return false;
 }
 
+bool GroupByOperator::compare_having(const Value& row_val, const std::string& op, const Value& target) const
+{
+    auto cmp = [&op](const auto& a, const auto& b) -> bool {
+        if (op == "=")  return a == b;
+        if (op == "!=") return a != b;
+        if (op == "<")  return a <  b;
+        if (op == ">")  return a >  b;
+        if (op == "<=") return a <= b;
+        if (op == ">=") return a >= b;
+        return false;
+    };
+
+    if (std::holds_alternative<int32_t>(row_val) && std::holds_alternative<int32_t>(target))
+        return cmp(std::get<int32_t>(row_val), std::get<int32_t>(target));
+    if (std::holds_alternative<double>(row_val) && std::holds_alternative<double>(target))
+        return cmp(std::get<double>(row_val), std::get<double>(target));
+    if (std::holds_alternative<int32_t>(row_val) && std::holds_alternative<double>(target))
+        return cmp((double)std::get<int32_t>(row_val), std::get<double>(target));
+    if (std::holds_alternative<double>(row_val) && std::holds_alternative<int32_t>(target))
+        return cmp(std::get<double>(row_val), (double)std::get<int32_t>(target));
+    if (std::holds_alternative<std::string>(row_val) && std::holds_alternative<std::string>(target))
+        return cmp(std::get<std::string>(row_val), std::get<std::string>(target));
+    if (std::holds_alternative<bool>(row_val) && std::holds_alternative<bool>(target))
+        return cmp(std::get<bool>(row_val), std::get<bool>(target));
+    if (std::holds_alternative<DateTime>(row_val) && std::holds_alternative<DateTime>(target))
+        return cmp(std::get<DateTime>(row_val), std::get<DateTime>(target));
+
+    return false;
+}
+
 void GroupByOperator::update_agg_state(AggregateState& state, const Value& val) const
 {
     bool is_null = std::holds_alternative<std::monostate>(val);
@@ -156,26 +186,40 @@ void GroupByOperator::Init()
         if (item.aggregate_function.empty() && !is_in_group_by(item.column)) {
             throw std::runtime_error("Column '" + item.column + "' must appear in the GROUP BY clause or be used in an aggregate function");
         }
+        if (having_clause_.has_value()) {
+            const auto& hi = having_clause_->item;
+            if (hi.aggregate_function.empty() && !is_in_group_by(hi.column)) {
+                throw std::runtime_error(
+                    "HAVING column '" + hi.column + "' must appear in GROUP BY clause or be an aggregate");
+            }
+        }
     }
 
     build_output_schema(child_schema);
+
+    std::vector<SelectItem> tracked_items = select_items_;
+    int having_agg_index = -1;
+    if (having_clause_.has_value() && !having_clause_->item.aggregate_function.empty()) {
+        tracked_items.push_back(having_clause_->item);
+        having_agg_index = (int)tracked_items.size() - 1;
+    }
 
     std::vector<int> group_by_indices;
     for (const auto& col : group_by_columns_) {
         int idx = find_column_index(col, child_schema);
         if (idx == -1) {
-            throw std::runtime_error("Column '" + col + "' not found in child schema");
+            throw std::runtime_error("GROUP BY column '" + col + "' not found in schema");
         }
         group_by_indices.push_back(idx);
     }
 
-    std::vector<int> agg_col_indices(select_items_.size(), -1);
-    for (size_t i = 0; i < select_items_.size(); ++i) {
-        const auto& item = select_items_[i];
+    std::vector<int> agg_col_indices(tracked_items.size(), -1);
+    for (size_t i = 0; i < tracked_items.size(); i++) {
+        const auto& item = tracked_items[i];
         if (!item.aggregate_function.empty() && !item.is_star) {
             int idx = find_column_index(item.column, child_schema);
             if (idx == -1) {
-                throw std::runtime_error("Column '" + item.column + "' not found in child schema");
+                throw std::runtime_error("Column '" + item.column + "' not found in schema");
             }
             agg_col_indices[i] = idx;
         }
@@ -186,24 +230,24 @@ void GroupByOperator::Init()
 
     std::optional<Row> row;
     while ((row = child_->Next())) {
-        std::vector<Value> group_key;
+        std::vector<Value> key;
         for (int idx : group_by_indices) {
-            group_key.push_back((*row)[idx]);
+            key.push_back((*row)[idx]);
         }
 
-        auto it = groups.find(group_key);
+        auto it = groups.find(key);
         if (it == groups.end()) {
-            groups[group_key] = std::vector<AggregateState>(select_items_.size());
-            representative_rows[group_key] = *row;
-            it = groups.find(group_key);
+            groups[key] = std::vector<AggregateState>(tracked_items.size());
+            representative_rows[key] = *row;
+            it = groups.find(key);
         }
 
-        for (size_t i = 0; i < select_items_.size(); i++) {
-            const auto& item = select_items_[i];
+        for (size_t i = 0; i < tracked_items.size(); i++) {
+            const auto& item = tracked_items[i];
             if (item.aggregate_function.empty()) continue;
 
             if (item.aggregate_function == "COUNT" && item.is_star) {
-                it->second[i].count++; // COUNT(*) can count even if the value is null, so we increment count directly
+                it->second[i].count++;
             } else {
                 update_agg_state(it->second[i], (*row)[agg_col_indices[i]]);
             }
@@ -218,6 +262,23 @@ void GroupByOperator::Init()
 
     for (const auto& [key, states] : groups) {
         const Row& rep_row = representative_rows[key];
+
+        if (having_clause_.has_value()) {
+            Value having_val;
+            const auto& hi = having_clause_->item;
+            if (!hi.aggregate_function.empty()) {
+                DataType src_type = DataType::INT;
+                if (!hi.is_star) src_type = child_schema[agg_col_indices[having_agg_index]].type;
+                having_val = finalize_agg(tracked_items[having_agg_index], states[having_agg_index], src_type);
+            } else {
+                int idx = find_column_index(hi.column, child_schema);
+                having_val = rep_row[idx];
+            }
+            if (!compare_having(having_val, having_clause_->op, having_clause_->value)) {
+                continue;
+            }
+        }
+
         Row out_row;
         for (size_t i = 0; i < select_items_.size(); i++) {
             const auto& item = select_items_[i];
