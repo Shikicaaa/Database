@@ -12,8 +12,10 @@
 #include "LimitOperator.h"
 #include "OrderOperator.h"
 #include "TypeCoercion.h"
+#include "GroupByOperator.h"
 #include <variant>
 #include <cstring>
+#include <algorithm>
 
 std::unique_ptr<Operator> Planner::create_plan(const Statement& stmt) {
     return std::visit([this](const auto& s) -> std::unique_ptr<Operator> {
@@ -129,8 +131,16 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
         current_op = std::make_unique<OrderOperator>(std::move(current_op), stmt.order_by.value());
     }
 
-    if (!stmt.columns.empty() && !(stmt.columns.size() == 1 && stmt.columns[0] == "*")) {
-        current_op = std::make_unique<ProjectOperator>(std::move(current_op), stmt.columns);
+    bool has_aggregates = std::any_of(stmt.select_items.begin(), stmt.select_items.end(),
+        [](const SelectItem& item){ return !item.aggregate_function.empty(); });
+
+    if (stmt.group_by.has_value() || has_aggregates) {
+        current_op = std::make_unique<GroupByOperator>(
+            std::move(current_op),
+            stmt.group_by.value_or(std::vector<std::string>{}),
+            stmt.select_items);
+    } else if (!stmt.select_items.empty()) {
+        current_op = std::make_unique<ProjectOperator>(std::move(current_op), stmt.select_items);
     }
 
     if (stmt.limit.has_value()) {
@@ -155,7 +165,7 @@ std::unique_ptr<LogicalNode> Planner::create_logical_plan_for_select(const Selec
     
     std::unique_ptr<LogicalNode> filter = std::make_unique<LogicalFilter>(stmt.where_clause, std::move(current_node));
 
-    std::unique_ptr<LogicalNode> project = std::make_unique<LogicalProject>(stmt.columns, std::move(filter));
+    std::unique_ptr<LogicalNode> project = std::make_unique<LogicalProject>(std::vector<std::string>{}, std::move(filter));
 
     return project;
 }
@@ -314,7 +324,7 @@ std::unique_ptr<Operator> Planner::create_physical_plan(std::unique_ptr<LogicalN
         case LogicalNodeType::PROJECT: {
             auto* p = static_cast<LogicalProject*>(node.get());
             auto child = create_physical_plan(std::move(p->children_[0]));
-            return std::make_unique<ProjectOperator>(std::move(child), p->columns_);
+            return std::make_unique<ProjectOperator>(std::move(child), std::vector<SelectItem>{});
         }
 
         case LogicalNodeType::FILTER: {

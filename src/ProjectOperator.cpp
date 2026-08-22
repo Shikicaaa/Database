@@ -1,7 +1,7 @@
 #include "ProjectOperator.h"
 #include <algorithm>
 
-ProjectOperator::ProjectOperator(std::unique_ptr<Operator> child, const std::vector<std::string>& selected_columns)
+ProjectOperator::ProjectOperator(std::unique_ptr<Operator> child, const std::vector<SelectItem>& selected_columns)
     : child_(std::move(child)), selected_columns_(selected_columns) 
 {
     build_schema_and_mapping();
@@ -23,7 +23,8 @@ void ProjectOperator::build_schema_and_mapping() {
         return;
     }
 
-    for(const auto& col_name : selected_columns_){
+    for(const auto& item : selected_columns_){
+        const std::string& col_name = item.column;
         auto it = std::find_if(child_schema.begin(), child_schema.end(),
             [&](const ColumnDefinition& col_def){
                 return col_def.name == col_name;
@@ -46,9 +47,13 @@ void ProjectOperator::build_schema_and_mapping() {
         }
 
         ColumnDefinition out_col = *it;
-        auto dot = col_name.rfind('.');
-        if (dot != std::string::npos) {
-            out_col.name = col_name.substr(dot + 1);
+        if (!item.alias.empty()) {
+            out_col.name = item.alias;
+        } else {
+            auto dot = col_name.rfind('.');
+            if (dot != std::string::npos) {
+                out_col.name = col_name.substr(dot + 1);
+            }
         }
         output_schema_.push_back(out_col);
         column_mapping_.push_back(std::distance(child_schema.begin(), it));

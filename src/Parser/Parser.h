@@ -15,6 +15,14 @@ struct OrderByClause {
     bool ascending; // true for ASC, false for DESC
 };
 
+struct SelectItem {
+    std::string column;
+    std::string aggregate_function; // "" for no aggregate, "COUNT", "SUM", "AVG", "MIN", "MAX"
+    bool is_star; // true only for count(*), false otherwise
+    bool is_distinct;
+    std::string alias;
+};
+
 struct JoinStatement
 {
     JoinType type;
@@ -36,11 +44,12 @@ struct WhereClause
 struct SelectStatement {
     std::string table_name;
     std::string table_alias;
-    std::vector<std::string> columns;
+    std::vector<SelectItem> select_items;
     std::vector<JoinStatement> joins;
     std::optional<WhereClause> where_clause;
     std::optional<uint32_t> limit;
     std::optional<std::vector<OrderByClause>> order_by;
+    std::optional<std::vector<std::string>> group_by;
 };
 
 struct InsertStatement
@@ -150,6 +159,8 @@ private:
     std::string parse_operator();
     std::pair<std::string, std::string> parse_qualified_identifier(); // returns {table_alias, column_name}
     DateTime parse_date_literal(const std::string& str);
+    SelectItem parse_select_item();
+    std::vector<std::string> parse_group_by();
 
     BeginStatement    parse_begin();
     CommitStatement   parse_commit();

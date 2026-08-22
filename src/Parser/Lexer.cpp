@@ -257,6 +257,14 @@ TokenType Lexer::keyword_to_identifier(const std::string& upper)
     if(upper == "BY") return TokenType::BY;
     if(upper == "ASC") return TokenType::ASC;
     if(upper == "DESC") return TokenType::DESC;
+    if(upper == "GROUP") return TokenType::GROUP;
+    if(upper == "HAVING") return TokenType::HAVING;
+    if(upper == "COUNT") return TokenType::COUNT;
+    if(upper == "SUM") return TokenType::SUM;
+    if(upper == "AVG") return TokenType::AVG;
+    if(upper == "MIN") return TokenType::MIN;
+    if(upper == "MAX") return TokenType::MAX;
+    if(upper == "AS") return TokenType::AS;
 
     return TokenType::IDENTIFIER;
 }

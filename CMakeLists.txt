@@ -85,6 +85,8 @@ add_executable (
   "src/LimitOperator.cpp"
   "src/OrderOperator.h"
   "src/OrderOperator.cpp"
+  "src/GroupByOperator.h"
+  "src/GroupByOperator.cpp"
 )
 
 

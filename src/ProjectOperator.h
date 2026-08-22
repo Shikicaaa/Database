@@ -1,12 +1,13 @@
 #pragma once
 #include "Operator.h"
+#include "Parser/Parser.h"
 #include <memory>
 #include <string>
 #include <vector>
 
 class ProjectOperator : public Operator {
 public:
-    ProjectOperator(std::unique_ptr<Operator> child, const std::vector<std::string>& selected_columns);
+    ProjectOperator(std::unique_ptr<Operator> child, const std::vector<SelectItem>& selected_columns);
 
     void Init() override;
     std::optional<Row> Next() override;
@@ -14,7 +15,7 @@ public:
 
 private:
     std::unique_ptr<Operator> child_;
-    std::vector<std::string> selected_columns_;
+    std::vector<SelectItem> selected_columns_;
 
     std::vector<ColumnDefinition> output_schema_;
     

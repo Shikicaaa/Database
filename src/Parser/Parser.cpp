@@ -6,7 +6,57 @@ const Token& Parser::peek() const
 {
     return tokeni[pos];
 }
- 
+
+SelectItem Parser::parse_select_item()
+{
+    SelectItem item = {"", "", false, false, ""};
+
+    switch (peek().type) {
+        case TokenType::COUNT:
+        case TokenType::SUM:
+        case TokenType::AVG:
+        case TokenType::MIN:
+        case TokenType::MAX: {
+            item.aggregate_function = advance().value;
+            expect(TokenType::LPAR, "expected '(' after aggregate function");
+            if (match(TokenType::STAR)) {
+                if (item.aggregate_function != "COUNT") {
+                    throw std::runtime_error("'*' can only be used with COUNT, not " + item.aggregate_function);
+                }
+                item.is_star = true;
+                item.column = "";
+            } else {
+                auto [table_alias, column_name] = parse_qualified_identifier();
+                item.column = table_alias.empty() ? column_name : table_alias + "." + column_name;
+            }
+            expect(TokenType::RPAR, "expected ')' after aggregate function");
+            break;
+        }
+        default: {
+            auto [table_alias, column_name] = parse_qualified_identifier();
+            item.column = table_alias.empty() ? column_name : table_alias + "." + column_name;
+            break;
+        }
+    }
+    if (check(TokenType::AS)) {
+        advance(); // consume AS
+        item.alias = expect(TokenType::IDENTIFIER, "expected alias after AS").value;
+    }
+    return item;
+}
+
+std::vector<std::string> Parser::parse_group_by()
+{
+    std::vector<std::string> cols;
+    auto [q, c] = parse_qualified_identifier();
+    cols.push_back(q.empty() ? c : q + "." + c);
+    while (match(TokenType::COMMA)) {
+        auto [q2, c2] = parse_qualified_identifier();
+        cols.push_back(q2.empty() ? c2 : q2 + "." + c2);
+    }
+    return cols;
+}
+
 const Token& Parser::peek_next() const
 {
     if (pos+ 1 < tokeni.size()) return tokeni[pos+ 1];
@@ -221,14 +271,12 @@ SelectStatement Parser::parse_select()
  
     if (match(TokenType::STAR)) {
     } else {
-        auto [q1, c1] = parse_qualified_identifier();
-        stmt.columns.push_back(q1.empty() ? c1 : q1 + "." + c1);
+        stmt.select_items.push_back(parse_select_item());
         while (match(TokenType::COMMA)) {
-            auto [q, c] = parse_qualified_identifier();
-            stmt.columns.push_back(q.empty() ? c : q + "." + c);
+            stmt.select_items.push_back(parse_select_item());
         }
     }
- 
+
     expect(TokenType::FROM, "expected FROM");
     
     stmt.table_name = expect(TokenType::IDENTIFIER, "expected table name").value;
@@ -244,6 +292,12 @@ SelectStatement Parser::parse_select()
  
     if (check(TokenType::WHERE)) {
         stmt.where_clause = parse_where();
+    }
+    
+    if (check(TokenType::GROUP)) {
+        advance(); // consume GROUP
+        expect(TokenType::BY, "expected BY after GROUP");
+        stmt.group_by = parse_group_by();
     }
 
     if (check(TokenType::ORDER)) {
