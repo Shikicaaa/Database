@@ -83,6 +83,8 @@ add_executable (
   "src/LikeOperator.cpp"
   "src/LimitOperator.h"
   "src/LimitOperator.cpp"
+  "src/OrderOperator.h"
+  "src/OrderOperator.cpp"
 )
 
 

@@ -9,6 +9,12 @@
 #include <vector>
 #include <string>
 
+
+struct OrderByClause {
+    std::string column;
+    bool ascending; // true for ASC, false for DESC
+};
+
 struct JoinStatement
 {
     JoinType type;
@@ -34,6 +40,7 @@ struct SelectStatement {
     std::vector<JoinStatement> joins;
     std::optional<WhereClause> where_clause;
     std::optional<uint32_t> limit;
+    std::optional<std::vector<OrderByClause>> order_by;
 };
 
 struct InsertStatement

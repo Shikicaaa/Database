@@ -246,6 +246,22 @@ SelectStatement Parser::parse_select()
         stmt.where_clause = parse_where();
     }
 
+    if (check(TokenType::ORDER)) {
+        advance(); // consume ORDER
+        expect(TokenType::BY, "expected BY after ORDER");
+        OrderByClause obc;
+        auto [q, c] = parse_qualified_identifier();
+        obc.column = q.empty() ? c : q + "." + c;
+        if (match(TokenType::ASC)) {
+            obc.ascending = true;
+        } else if (match(TokenType::DESC)) {
+            obc.ascending = false;
+        } else {
+            obc.ascending = true;
+        }
+        stmt.order_by = std::vector<OrderByClause>{obc};
+    }
+
     if (match(TokenType::LIMIT)) {
         stmt.limit = std::stoul(expect(TokenType::NUMBER_LITERAL, "expected number after LIMIT").value);
     }

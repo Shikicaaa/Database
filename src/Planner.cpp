@@ -10,6 +10,7 @@
 #include "DeleteOperator.h"
 #include "LogicalPlan.h"
 #include "LimitOperator.h"
+#include "OrderOperator.h"
 #include "TypeCoercion.h"
 #include <variant>
 #include <cstring>
@@ -122,6 +123,10 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
 
     if (!where_handled && stmt.where_clause.has_value()) {
         current_op = std::make_unique<FilterOperator>(std::move(current_op), stmt.where_clause);
+    }
+
+    if (stmt.order_by.has_value() && !stmt.order_by->empty()) {
+        current_op = std::make_unique<OrderOperator>(std::move(current_op), stmt.order_by.value());
     }
 
     if (!stmt.columns.empty() && !(stmt.columns.size() == 1 && stmt.columns[0] == "*")) {
