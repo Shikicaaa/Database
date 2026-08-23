@@ -5,6 +5,7 @@
 #include "Parser/Parser.h"
 #include "Executor.h"
 #include "Logger.h"
+#include "Banner.h"
 #include <iostream>
 #include <string>
 #include <iomanip>
@@ -129,7 +130,8 @@ int main(int argc, char* argv[])
     wal.recover(catalog);
     Executor executor(catalog, wal, pager);
 
-    std::cout << "ShikiDB v1.0\n";
+    
+    print_banner();
     std::cout << "Type 'exit' or 'quit' to close.\n\n";
 
     std::string input;
