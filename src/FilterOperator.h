@@ -18,4 +18,6 @@ private:
     int find_column_index(const std::string& col_name, const std::vector<ColumnDefinition>& schema) const;
     
     bool compare_values(const Value& row_val, const std::string& op, const Value& where_val) const;
+
+    bool evaluate(const Condition& cond, const Row& row, const std::vector<ColumnDefinition>& schema) const;
 };

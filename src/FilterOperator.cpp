@@ -14,28 +14,13 @@ const std::vector<ColumnDefinition>& FilterOperator::GetOutputSchema() const {
     return child_->GetOutputSchema();
 }
 
-std::optional<Row> FilterOperator::Next(){
+std::optional<Row> FilterOperator::Next() {
     std::optional<Row> current_row = child_->Next();
-    
-    while(current_row.has_value()){
-        if(where_clause_.has_value()){
-            std::string lookup = where_clause_->column;
-            if(!where_clause_->table_qualifier.empty()){
-                lookup = where_clause_->table_qualifier + "." + where_clause_->column;
-            }
-            uint32_t col_index = find_column_index(lookup, child_->GetOutputSchema());
-            if (col_index == -1)
-            {
-                LOG_ERROR("Filter", "Column '" + lookup + "' not found in schema");
-                return std::nullopt;
-            }
-            auto val = current_row.value()[col_index];
-            if(compare_values(val, where_clause_->op, where_clause_->value)){
-                return current_row;
-            }
-        } else {
+
+    while (current_row.has_value()) {
+        if (!where_clause_.has_value() || !where_clause_.value()) return current_row;
+        if (evaluate(*where_clause_.value(), *current_row, child_->GetOutputSchema()))
             return current_row;
-        }
         current_row = child_->Next();
     }
     return std::nullopt;
@@ -128,5 +113,36 @@ bool FilterOperator::compare_values(const Value& row_val,
         return op == "=";
     }
 
+    return false;
+}
+
+bool FilterOperator::evaluate(const Condition& cond, const Row& row,
+                               const std::vector<ColumnDefinition>& schema) const
+{
+    switch (cond.type) {
+        case ConditionType::AND:
+            return evaluate(*cond.children[0], row, schema) &&
+                   evaluate(*cond.children[1], row, schema);
+
+        case ConditionType::OR:
+            return evaluate(*cond.children[0], row, schema) ||
+                   evaluate(*cond.children[1], row, schema);
+
+        case ConditionType::NOT:
+            return !evaluate(*cond.children[0], row, schema);
+
+        case ConditionType::COMPARISON: {
+            std::string lookup = cond.column;
+            if (!cond.table_qualifier.empty())
+                lookup = cond.table_qualifier + "." + cond.column;
+
+            int col_index = find_column_index(lookup, schema);
+            if (col_index == -1) {
+                LOG_ERROR("Filter", "Column '" + lookup + "' not found in schema");
+                throw std::runtime_error("Column '" + lookup + "' not found in schema");
+            }
+            return compare_values(row[col_index], cond.op, cond.value);
+        }
+    }
     return false;
 }

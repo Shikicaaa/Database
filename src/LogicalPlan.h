@@ -62,7 +62,7 @@ class LogicalFilter : public LogicalNode {
 public:
     std::optional<WhereClause> where_clause_;
     
-    explicit LogicalFilter(std::optional<WhereClause> where, std::unique_ptr<LogicalNode> child) 
+    explicit LogicalFilter(std::optional<WhereClause> where, std::unique_ptr<LogicalNode> child)
         : where_clause_(where) {
         children_.push_back(std::move(child));
     }

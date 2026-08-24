@@ -39,13 +39,20 @@ struct JoinStatement
     JoinCondition condition;
 };
 
-struct WhereClause
-{
+enum class ConditionType { COMPARISON, AND, OR, NOT };
+
+struct Condition {
+    ConditionType type;
+
     std::string table_qualifier;
     std::string column;
     std::string op;
     Value value;
+
+    std::vector<std::shared_ptr<Condition>> children; 
 };
+
+using WhereClause = std::shared_ptr<Condition>;
 
 struct SelectStatement {
     std::string table_name;
@@ -169,6 +176,11 @@ private:
     DateTime parse_date_literal(const std::string& str);
     SelectItem parse_select_item();
     std::vector<std::string> parse_group_by();
+
+    std::shared_ptr<Condition> parse_or_expr();
+    std::shared_ptr<Condition> parse_and_expr();
+    std::shared_ptr<Condition> parse_not_expr();
+    std::shared_ptr<Condition> parse_primary_condition();
 
 
     BeginStatement    parse_begin();

@@ -57,6 +57,86 @@ std::vector<std::string> Parser::parse_group_by()
     return cols;
 }
 
+
+// (EXPRESSION) > NOT > AND > OR
+std::shared_ptr<Condition> Parser::parse_or_expr() {
+    auto left = parse_and_expr();
+    while (check(TokenType::OR)) {
+        advance();
+        auto right = parse_and_expr();
+        auto node = std::make_shared<Condition>();
+        node->type = ConditionType::OR;
+        node->children.push_back(left);
+        node->children.push_back(right);
+        left = node;
+    }
+    return left;
+}
+
+std::shared_ptr<Condition> Parser::parse_and_expr() {
+    auto left = parse_not_expr();
+    while (check(TokenType::AND)) {
+        advance();
+        auto right = parse_not_expr();
+        auto node = std::make_shared<Condition>();
+        node->type = ConditionType::AND;
+        node->children.push_back(left);
+        node->children.push_back(right);
+        left = node;
+    }
+    return left;
+}
+
+std::shared_ptr<Condition> Parser::parse_not_expr() {
+    if (match(TokenType::NOT)) {
+        auto child = parse_not_expr();
+        auto node = std::make_shared<Condition>();
+        node->type = ConditionType::NOT;
+        node->children.push_back(child);
+        return node;
+    }
+    return parse_primary_condition();
+}
+
+std::shared_ptr<Condition> Parser::parse_primary_condition() {
+    if (match(TokenType::LPAR)) {
+        auto inner = parse_or_expr();
+        expect(TokenType::RPAR, "expected ')' after expression");
+        return inner;
+    }
+
+    auto node = std::make_shared<Condition>();
+    node->type = ConditionType::COMPARISON;
+
+    auto [qualifier, column] = parse_qualified_identifier();
+    node->table_qualifier = qualifier;
+    node->column = column;
+
+    if (check(TokenType::IS)) {
+        advance();
+        if (check(TokenType::NOT)) {
+            advance();
+            expect(TokenType::NULL_KW, "expected NULL after IS NOT");
+            node->op = "IS NOT NULL";
+        } else {
+            expect(TokenType::NULL_KW, "expected NULL after IS");
+            node->op = "IS NULL";
+        }
+        node->value = std::monostate{};
+        return node;
+    }
+    if (check(TokenType::LIKE) || check(TokenType::ILIKE)) {
+        node->op = (peek().type == TokenType::LIKE) ? "LIKE" : "ILIKE";
+        advance();
+        node->value = parse_value();
+        return node;
+    }
+
+    node->op = parse_operator();
+    node->value = parse_value();
+    return node;
+}
+
 const Token& Parser::peek_next() const
 {
     if (pos+ 1 < tokeni.size()) return tokeni[pos+ 1];
@@ -486,41 +566,11 @@ Statement Parser::parse_create()
 //  Gramatika:
 //    WHERE identifier operator value
 //
-//  Operator: = | != | <> | < | > | <= | >=
+//  Operator: = | != | <> | < | > | <= | >= | AND | OR | NOT | IS NULL | IS NOT NULL | LIKE | ILIKE
 WhereClause Parser::parse_where()
 {
-    WhereClause wc;
- 
     expect(TokenType::WHERE, "expected WHERE");
-    auto [qualifier, column] = parse_qualified_identifier();
-    wc.table_qualifier = qualifier;
-    wc.column          = column;
- 
-    if (check(TokenType::IS)) {
-        advance(); // consume IS
-        if (check(TokenType::NOT)) {
-            advance(); // consume NOT
-            expect(TokenType::NULL_KW, "expected NULL after IS NOT");
-            wc.op    = "IS NOT NULL";
-            wc.value = std::monostate{};
-        } else {
-            expect(TokenType::NULL_KW, "expected NULL after IS");
-            wc.op    = "IS NULL";
-            wc.value = std::monostate{};
-        }
-        return wc;
-    }
-    if (check(TokenType::LIKE) || check(TokenType::ILIKE)) {
-        wc.op = (peek().type == TokenType::LIKE) ? "LIKE" : "ILIKE";
-        advance(); // consume LIKE or ILIKE
-        wc.value = parse_value(); // expects a string literal
-        return wc;
-    }
- 
-    wc.op    = parse_operator();
-    wc.value = parse_value();
- 
-    return wc;
+    return parse_or_expr();
 }
  
 //   std::variant<std::monostate, int32_t, double, std::string, bool, DateUnix>

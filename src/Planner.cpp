@@ -44,14 +44,14 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
     bool where_handled = false;
 
     if (stmt.joins.empty() && stmt.where_clause.has_value() &&
-        stmt.where_clause->op == "=" &&
-        !std::holds_alternative<std::monostate>(stmt.where_clause->value))
+        stmt.where_clause.value()->type == ConditionType::COMPARISON &&
+        !std::holds_alternative<std::monostate>(stmt.where_clause.value()->value))
     {
-        auto idx = catalog_.find_index_for_column(stmt.table_name, stmt.where_clause->column);
+        auto idx = catalog_.find_index_for_column(stmt.table_name, stmt.where_clause.value()->column);
         if (idx.has_value()) {
             BTree* idx_btree = catalog_.get_index_btree(idx->index_name);
             if (idx_btree) {
-                const auto& wc = stmt.where_clause.value();
+                const Condition& wc = *stmt.where_clause.value();
                 const auto& cols = left_table->get_columns();
                 int col_idx = -1;
                 for (int i = 0; i < (int)cols.size(); i++)
@@ -201,12 +201,12 @@ std::unique_ptr<LogicalNode> Planner::optimize_select(std::unique_ptr<LogicalNod
         filter->children_[0] = std::make_unique<LogicalIndexScan>(scan->table_name_, pk.value());
         filter->where_clause_ = std::nullopt;
     } else if (filter->where_clause_.has_value() &&
-               filter->where_clause_->op == "=" &&
-               !std::holds_alternative<std::monostate>(filter->where_clause_->value))
+            filter->where_clause_.value()->type == ConditionType::COMPARISON &&
+            !std::holds_alternative<std::monostate>(filter->where_clause_.value()->value))
     {
-        auto idx = catalog_.find_index_for_column(scan->table_name_, filter->where_clause_->column);
+        auto idx = catalog_.find_index_for_column(scan->table_name_, filter->where_clause_.value()->column);
         if (idx.has_value()) {
-            const auto& wc = filter->where_clause_.value();
+            const Condition& wc = *filter->where_clause_.value();
             Table* t = catalog_.get_table(scan->table_name_);
             int col_idx = -1;
             if (t) {
@@ -305,9 +305,9 @@ std::optional<uint32_t> Planner::try_extract_pk_from_where(
     const std::optional<WhereClause>& where,
     const std::vector<ColumnDefinition>& schema) const
 {
-    if (!where.has_value()) return std::nullopt;
-    const auto& clause = where.value();
-    if (clause.op != "=") return std::nullopt;
+    if (!where.has_value() || !where.value()) return std::nullopt;
+    const Condition& clause = *where.value();
+    if (clause.type != ConditionType::COMPARISON || clause.op != "=") return std::nullopt;
 
     for (const auto& col_def : schema) {
         if (col_def.is_primary_key && col_def.name == clause.column) {
