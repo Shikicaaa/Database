@@ -44,6 +44,7 @@ std::vector<Token> Lexer::tokenize()
             case ';': tokens.emplace_back(TokenType::SEMICOLON, ";", line_); break;
             case '*': tokens.emplace_back(TokenType::STAR, "*", line_); break;
             case '=': tokens.emplace_back(TokenType::EQ, "=", line_); break;
+            case '-': tokens.emplace_back(TokenType::MINUS, "-", line_); break;
             case '!':
                 if(!at_end() && peek() == '=')
                 {
@@ -142,11 +143,11 @@ Token Lexer::read_number()
     int start_line = line_;
     std::string num;
 
-    if(peek() == '-') num += advance(); // Negative number
     while(!at_end() && (std::isdigit(peek())))
     {
         num += advance();
     }
+    
     if(!at_end() && peek() == '.')
     {
         num += advance(); // Decimal point

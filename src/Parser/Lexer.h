@@ -35,6 +35,7 @@ enum class TokenType {
     GT, // >
     LTE, // <=
     GTE, // >=
+    MINUS,
 
     // SEPARATORI
     LPAR, // (

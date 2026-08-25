@@ -571,16 +571,29 @@ WhereClause Parser::parse_where()
 //   std::variant<std::monostate, int32_t, double, std::string, bool, DateUnix>
 Value Parser::parse_value()
 {
+    bool negative = false;
+    if (check(TokenType::MINUS)) {
+        negative = true;
+        advance();
+    }
+
     const Token& t = peek();
  
     if (t.type == TokenType::NUMBER_LITERAL) {
         advance();
-        // Ako ima br ima . onda je NUMBER inace je INTEGER
         if (t.value.find('.') != std::string::npos) {
-            return Value(std::stod(t.value));
+            double v = std::stod(t.value);
+            return Value(negative ? -v : v);
         } else {
-            return Value(static_cast<int32_t>(std::stoi(t.value)));
+            int32_t v = static_cast<int32_t>(std::stoi(t.value));
+            return Value(negative ? -v : v);
         }
+    }
+
+    if (negative) {
+        throw std::runtime_error(
+            "Syntax error at line " + std::to_string(t.line) +
+            ": expected number after '-', got '" + t.value + "'");
     }
  
     if (t.type == TokenType::STRING_LITERAL) {
