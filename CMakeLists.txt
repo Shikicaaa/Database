@@ -23,7 +23,7 @@ endif()
 # set_property(TARGET CMakeTarget PROPERTY CXX_STANDARD 20)
 # endif()
 
-include_directories(include)
+include_directories(include src)
 
 add_executable (
   shikidb
@@ -87,6 +87,7 @@ add_executable (
   "src/OrderOperator.cpp"
   "src/GroupByOperator.h"
   "src/GroupByOperator.cpp"
+  "src/DateUtils.h"
 )
 
 

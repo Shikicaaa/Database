@@ -3,11 +3,13 @@
 #include "../Serializer.h"
 #include "../JoinTypes.h"
 #include "../JoinOperator.h"
+#include "../DateUtils.h"
 
 #include <variant>
 #include <optional>
 #include <vector>
 #include <string>
+#include <string_view>
 
 
 struct OrderByClause {
@@ -185,7 +187,7 @@ private:
     HavingClause parse_having();
     std::string parse_operator();
     std::pair<std::string, std::string> parse_qualified_identifier(); // returns {table_alias, column_name}
-    DateTime parse_date_literal(const std::string& str);
+    DateTime parse_date_literal(std::string_view s);
     SelectItem parse_select_item();
     std::vector<std::string> parse_group_by();
 
