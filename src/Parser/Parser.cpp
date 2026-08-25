@@ -251,73 +251,28 @@ Statement Parser::parse_statement()
                 peek().value + "'");
     }
 }
- 
-DateTime Parser::parse_date_literal(const std::string& s)
-{
-    DateTime dt;
- 
-    // Supported formats (with optional time part):
-    //   YYYY-MM-DD HH:MM:SS
-    //   YYYY-MM-DD
-    //   DD-MM-YYYY HH:MM:SS
-    //   DD-MM-YYYY
-    //   DD-MM-YY HH:MM:SS
-    //   DD-MM-YY
-    // Separator can be '-' or '/'
- 
-    std::string norm = s;
-    for (char& c : norm) if (c == '/') c = '-';
- 
-    int a, b, c_val;
-    int hh = 0, mm = 0, ss = 0;
-    bool has_time = false;
- 
-    if (std::sscanf(norm.c_str(), "%d-%d-%d %d:%d:%d", &a, &b, &c_val, &hh, &mm, &ss) == 6) {
-        has_time = true;
-    } else if (std::sscanf(norm.c_str(), "%d-%d-%d", &a, &b, &c_val) != 3) {
-        throw std::runtime_error("Invalid date literal '" + s +
-            "'. Supported formats: YYYY-MM-DD, DD-MM-YYYY, DD-MM-YY, with optional HH:MM:SS");
+
+inline int fast_parse_int(std::string_view& s, char sep1, char sep2 = '\0') {
+    int val = 0;
+    size_t i = 0;
+    
+    while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
+        val = val * 10 + (s[i] - '0');
+        i++;
     }
- 
-    int year, month, day;
-    if (a > 31) {
-        // YYYY-MM-DD
-        year  = a;
-        month = b;
-        day   = c_val;
-    } else if (c_val > 31) {
-        // DD-MM-YYYY
-        day   = a;
-        month = b;
-        year  = c_val;
-    } else if (c_val <= 99) {
-        // DD-MM-YY — two-digit year: 00-99 -> 2000-2099
-        day   = a;
-        month = b;
-        year  = 2000 + c_val;
+    
+    if (i < s.size() && (s[i] == sep1 || s[i] == sep2)) {
+        s.remove_prefix(i + 1);
     } else {
-        throw std::runtime_error("Ambiguous date literal '" + s + "': cannot determine year position");
+        s.remove_prefix(i);
     }
+    
+    return val;
+}
  
-    if (month < 1 || month > 12)
-        throw std::runtime_error("Invalid month " + std::to_string(month) + " in date '" + s + "'");
-    if (day < 1 || day > 31)
-        throw std::runtime_error("Invalid day " + std::to_string(day) + " in date '" + s + "'");
-    if (hh < 0 || hh > 23)
-        throw std::runtime_error("Invalid hour " + std::to_string(hh) + " in date '" + s + "'");
-    if (mm < 0 || mm > 59)
-        throw std::runtime_error("Invalid minute " + std::to_string(mm) + " in date '" + s + "'");
-    if (ss < 0 || ss > 59)
-        throw std::runtime_error("Invalid second " + std::to_string(ss) + " in date '" + s + "'");
- 
-    dt.year   = static_cast<int16_t>(year);
-    dt.month  = static_cast<uint8_t>(month);
-    dt.day    = static_cast<uint8_t>(day);
-    dt.hour   = static_cast<uint8_t>(hh);
-    dt.minute = static_cast<uint8_t>(mm);
-    dt.second = static_cast<uint8_t>(ss);
- 
-    return dt;
+DateTime Parser::parse_date_literal(std::string_view s)
+{
+    return DateUtils::parse_date(s);
 }
  
 std::pair<std::string, std::string> Parser::parse_qualified_identifier()
