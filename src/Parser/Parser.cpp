@@ -105,6 +105,16 @@ std::shared_ptr<Condition> Parser::parse_primary_condition() {
         return inner;
     }
 
+    if (match(TokenType::EXISTS)) {
+        expect(TokenType::LPAR, "expected '(' after EXISTS");
+        auto node = std::make_shared<Condition>();
+        node->type = ConditionType::COMPARISON;
+        node->op = "EXISTS";
+        node->subquery = std::make_shared<SelectStatement>(parse_select());
+        expect(TokenType::RPAR, "expected ')' after subquery");
+        return node;
+    }
+
     auto node = std::make_shared<Condition>();
     node->type = ConditionType::COMPARISON;
 
@@ -132,8 +142,38 @@ std::shared_ptr<Condition> Parser::parse_primary_condition() {
         return node;
     }
 
+    if (check(TokenType::NOT) && peek_next().type == TokenType::IN) {
+        advance(); // consume NOT
+        advance(); // consume IN
+        node->op = "NOT IN";
+        expect(TokenType::LPAR, "expected '(' after NOT IN");
+        node->subquery = std::make_shared<SelectStatement>(parse_select());
+        expect(TokenType::RPAR, "expected ')' after subquery");
+        return node;
+    }
+
+    if (check(TokenType::IN)) {
+        advance();
+        node->op = "IN";
+        expect(TokenType::LPAR, "expected '(' after IN");
+        node->subquery = std::make_shared<SelectStatement>(parse_select());
+        expect(TokenType::RPAR, "expected ')' after subquery");
+        return node;
+    }
+
     node->op = parse_operator();
-    node->value = parse_value();
+    if (check(TokenType::LPAR) && peek_next().type == TokenType::SELECT) {
+        advance(); // consume '('
+        node->subquery = std::make_shared<SelectStatement>(parse_select());
+        expect(TokenType::RPAR, "expected ')' after subquery");
+    } else if (check(TokenType::IDENTIFIER)) {
+        auto [q, c] = parse_qualified_identifier();
+        node->rhs_is_column = true;
+        node->rhs_table_qualifier = q;
+        node->rhs_column = c;
+        }else {
+        node->value = parse_value();
+    }
     return node;
 }
 

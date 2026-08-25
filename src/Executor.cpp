@@ -52,7 +52,7 @@ ExecutionResult Executor::execute(const Statement& stmt)
         else if constexpr (std::is_same_v<T, RollbackStatement>)
             return execute_rollback(s);
         else
-            return {false, "Unknown statement type"};
+            return {false, "Unknown statement type", {}, {}};
     }, stmt);
 }
 

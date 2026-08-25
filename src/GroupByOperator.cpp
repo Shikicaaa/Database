@@ -256,7 +256,7 @@ void GroupByOperator::Init()
 
     // fallback if there are no group by columns and no rows, we still need to produce a single row with aggregate results
     if (groups.empty() && group_by_columns_.empty()) {
-        groups[{}] = std::vector<AggregateState>(select_items_.size());
+        groups[{}] = std::vector<AggregateState>(tracked_items.size());
         representative_rows[{}] = Row(child_schema.size(), Value(std::monostate{}));
     }
 

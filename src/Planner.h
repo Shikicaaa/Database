@@ -30,4 +30,14 @@ private:
     std::optional<uint32_t> try_extract_pk_from_where(
         const std::optional<WhereClause>& where,
         const std::vector<ColumnDefinition>& schema) const;
+    
+    void resolve_subqueries(const std::shared_ptr<Condition>& cond, const std::string& outer_alias);
+    Row execute_scalar_subquery(const SelectStatement& stmt);
+    bool is_correlated_subquery(const SelectStatement& sub, const std::string& outer_alias) const;
+    std::vector<Value> execute_in_subquery(const SelectStatement& stmt);
+
+    static std::string effective_alias(const std::string& table_name, const std::string& table_alias) {
+        return table_alias.empty() ? table_name : table_alias;
+    }
+    
 };

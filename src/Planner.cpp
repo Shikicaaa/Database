@@ -17,6 +17,21 @@
 #include <cstring>
 #include <algorithm>
 
+static void collect_column_qualifiers(const std::shared_ptr<Condition>& cond, std::vector<std::string>& out) {
+    if (!cond) return;
+    if (cond->type == ConditionType::AND || cond->type == ConditionType::OR) {
+        collect_column_qualifiers(cond->children[0], out);
+        collect_column_qualifiers(cond->children[1], out);
+        return;
+    }
+    if (cond->type == ConditionType::NOT) {
+        collect_column_qualifiers(cond->children[0], out);
+        return;
+    }
+    if (!cond->table_qualifier.empty()) out.push_back(cond->table_qualifier);
+    if (cond->rhs_is_column && !cond->rhs_table_qualifier.empty()) out.push_back(cond->rhs_table_qualifier);
+}
+
 std::unique_ptr<Operator> Planner::create_plan(const Statement& stmt) {
     return std::visit([this](const auto& s) -> std::unique_ptr<Operator> {
         using T = std::decay_t<decltype(s)>;
@@ -38,6 +53,12 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
     Table* left_table = catalog_.get_table(stmt.table_name);
     if (!left_table) {
         throw std::runtime_error("Table '" + stmt.table_name + "' does not exist");
+    }
+
+    std::string outer_ref = effective_alias(stmt.table_name, stmt.table_alias);
+
+    if (stmt.where_clause.has_value() && stmt.where_clause.value()) {
+        resolve_subqueries(stmt.where_clause.value(), outer_ref);
     }
 
     std::unique_ptr<Operator> current_op;
@@ -104,7 +125,8 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
     }
 
     if (!current_op) {
-        current_op = std::make_unique<SeqScanOperator>(left_table);
+        std::string scan_alias = stmt.joins.empty() ? stmt.table_alias : "";
+        current_op = std::make_unique<SeqScanOperator>(left_table, scan_alias);
     }
 
     std::string current_alias = stmt.table_alias;
@@ -124,7 +146,8 @@ std::unique_ptr<Operator> Planner::plan_select(const SelectStatement& stmt) {
     }
 
     if (!where_handled && stmt.where_clause.has_value()) {
-        current_op = std::make_unique<FilterOperator>(std::move(current_op), stmt.where_clause);
+        current_op = std::make_unique<FilterOperator>(
+            std::move(current_op), stmt.where_clause, &catalog_, outer_ref);
     }
 
     if (stmt.order_by.has_value() && !stmt.order_by->empty()) {
@@ -185,6 +208,10 @@ std::unique_ptr<LogicalNode> Planner::optimize_select(std::unique_ptr<LogicalNod
     }
 
     if (!filter) return plan;
+
+    if (filter->where_clause_.has_value() && filter->where_clause_.value()) {
+        resolve_subqueries(filter->where_clause_.value(), "");
+    }
 
     LogicalNode* scan_node = filter->children_[0].get();
     if (scan_node->GetType() != LogicalNodeType::SCAN) return plan;
@@ -277,8 +304,12 @@ std::unique_ptr<Operator> Planner::plan_update(const UpdateStatement& stmt) {
         throw std::runtime_error("Table '" + stmt.table_name + "' does not exist");
     }
 
+    if (stmt.where_clause.has_value() && stmt.where_clause.value()) {
+        resolve_subqueries(stmt.where_clause.value(), stmt.table_name);
+    }
+
     std::unique_ptr<LogicalNode> scan = std::make_unique<LogicalScan>(stmt.table_name);
-    std::unique_ptr<LogicalNode> filter = std::make_unique<LogicalFilter>(stmt.where_clause, std::move(scan));
+    std::unique_ptr<LogicalNode> filter = std::make_unique<LogicalFilter>(stmt.where_clause, std::move(scan), stmt.table_name);
     
     std::unique_ptr<LogicalNode> optimized_plan = optimize_select(std::move(filter));
     std::unique_ptr<Operator> child = create_physical_plan(std::move(optimized_plan));
@@ -292,8 +323,12 @@ std::unique_ptr<Operator> Planner::plan_delete(const DeleteStatement& stmt) {
         throw std::runtime_error("Table '" + stmt.table_name + "' does not exist");
     }
 
+    if (stmt.where_clause.has_value() && stmt.where_clause.value()) {
+        resolve_subqueries(stmt.where_clause.value(), stmt.table_name);
+    }
+
     std::unique_ptr<LogicalNode> scan = std::make_unique<LogicalScan>(stmt.table_name);
-    std::unique_ptr<LogicalNode> filter = std::make_unique<LogicalFilter>(stmt.where_clause, std::move(scan));
+    std::unique_ptr<LogicalNode> filter = std::make_unique<LogicalFilter>(stmt.where_clause, std::move(scan), stmt.table_name);
     
     std::unique_ptr<LogicalNode> optimized_plan = optimize_select(std::move(filter));
     std::unique_ptr<Operator> child = create_physical_plan(std::move(optimized_plan));
@@ -319,6 +354,93 @@ std::optional<uint32_t> Planner::try_extract_pk_from_where(
     return std::nullopt;
 }
 
+void Planner::resolve_subqueries(const std::shared_ptr<Condition>& cond, const std::string& outer_alias) {
+    if (!cond) return;
+
+    if (cond->type == ConditionType::AND || cond->type == ConditionType::OR) {
+        resolve_subqueries(cond->children[0], outer_alias);
+        resolve_subqueries(cond->children[1], outer_alias);
+        return;
+    }
+    if (cond->type == ConditionType::NOT) {
+        resolve_subqueries(cond->children[0], outer_alias);
+        return;
+    }
+
+    if (!cond->subquery) return;
+
+    // Korelisan subquery se NE razresava ovde — ostaje za FilterOperator
+    if (is_correlated_subquery(*cond->subquery, outer_alias)) {
+        return;
+    }
+
+    if (cond->op == "IN" || cond->op == "NOT IN") {
+        cond->value_list = execute_in_subquery(*cond->subquery);
+    } else if (cond->op == "EXISTS" || cond->op == "NOT EXISTS") {
+        auto plan = plan_select(*cond->subquery);
+        plan->Init();
+        bool has_row = plan->Next().has_value();
+        bool result = (cond->op == "EXISTS") ? has_row : !has_row;
+
+        cond->type = ConditionType::LITERAL_BOOL;
+        cond->literal_value = result;
+        cond->op.clear();
+    } else {
+        Row r = execute_scalar_subquery(*cond->subquery);
+        cond->value = r.empty() ? Value(std::monostate{}) : r[0];
+    }
+    cond->subquery.reset();
+}
+
+Row Planner::execute_scalar_subquery(const SelectStatement& stmt) {
+    auto plan = plan_select(stmt);
+    plan->Init();
+    auto row = plan->Next();
+    if (!row.has_value())
+        return Row{Value(std::monostate{})};
+    if (row.value().size() != 1)
+        throw std::runtime_error("Scalar subquery must return exactly one column");
+    if (plan->Next().has_value())
+        throw std::runtime_error("Scalar subquery returned more than one row");
+    return row.value();
+}
+
+bool Planner::is_correlated_subquery(const SelectStatement& sub, const std::string& outer_alias) const {
+    if (outer_alias.empty()) return false;
+
+    std::vector<std::string> own_scopes = {sub.table_name, sub.table_alias};
+    for (const auto& j : sub.joins) {
+        own_scopes.push_back(j.right_table);
+        own_scopes.push_back(j.right_alias);
+    }
+
+    if (!sub.where_clause.has_value() || !sub.where_clause.value()) return false;
+
+    std::vector<std::string> qualifiers;
+    collect_column_qualifiers(sub.where_clause.value(), qualifiers);
+
+    for (const auto& q : qualifiers) {
+        if (q == outer_alias &&
+            std::find(own_scopes.begin(), own_scopes.end(), q) == own_scopes.end()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<Value> Planner::execute_in_subquery(const SelectStatement& stmt) {
+    auto plan = plan_select(stmt);
+    plan->Init();
+    std::vector<Value> result;
+    auto row = plan->Next();
+    while (row.has_value()) {
+        if (row.value().size() != 1)
+            throw std::runtime_error("IN subquery must return exactly one column");
+        result.push_back(row.value()[0]);
+        row = plan->Next();
+    }
+    return result;
+}
 std::unique_ptr<Operator> Planner::create_physical_plan(std::unique_ptr<LogicalNode> node) {
     switch (node->GetType()) {
 
@@ -331,7 +453,7 @@ std::unique_ptr<Operator> Planner::create_physical_plan(std::unique_ptr<LogicalN
         case LogicalNodeType::FILTER: {
             auto* f = static_cast<LogicalFilter*>(node.get());
             auto child = create_physical_plan(std::move(f->children_[0]));
-            return std::make_unique<FilterOperator>(std::move(child), f->where_clause_);
+            return std::make_unique<FilterOperator>(std::move(child), f->where_clause_, &catalog_, f->outer_alias_);
         }
 
         case LogicalNodeType::SCAN: {

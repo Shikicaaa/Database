@@ -5,7 +5,7 @@
 
 class IndexScanOperator : public Operator {
 public:
-    IndexScanOperator(Table* table, uint32_t pk_value);
+    IndexScanOperator(Table* table, uint32_t pk_value, const std::string& alias = "");
     
     void Init() override;
     std::optional<Row> Next() override;
@@ -15,4 +15,7 @@ private:
     Table* table_;
     uint32_t pk_value_;
     bool already_returned_;
+    std::string alias_;
+    mutable std::vector<ColumnDefinition> aliased_schema_;
+    mutable bool schema_built_ = false;
 };

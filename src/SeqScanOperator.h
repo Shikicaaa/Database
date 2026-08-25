@@ -7,7 +7,7 @@
 
 class SeqScanOperator : public Operator {
 public:
-    explicit SeqScanOperator(Table* table);
+    explicit SeqScanOperator(Table* table, const std::string& alias = "");
 
     void Init() override;
     std::optional<Row> Next() override;
@@ -15,6 +15,9 @@ public:
 
 private:
     Table* table_;
-    
+    std::string alias_;
     std::unique_ptr<Cursor> cursor_;
+
+    mutable std::vector<ColumnDefinition> aliased_schema_;
+    mutable bool schema_built_ = false;
 };

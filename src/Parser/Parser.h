@@ -39,7 +39,9 @@ struct JoinStatement
     JoinCondition condition;
 };
 
-enum class ConditionType { COMPARISON, AND, OR, NOT };
+struct SelectStatement;
+
+enum class ConditionType { COMPARISON, AND, OR, NOT, LITERAL_BOOL };
 
 struct Condition {
     ConditionType type;
@@ -49,7 +51,17 @@ struct Condition {
     std::string op;
     Value value;
 
+    bool literal_value; // true if this condition is a literal
+
+    std::vector<Value> value_list; 
+
+    std::shared_ptr<SelectStatement> subquery;
+
     std::vector<std::shared_ptr<Condition>> children; 
+
+    bool rhs_is_column = false;
+    std::string rhs_table_qualifier;
+    std::string rhs_column;
 };
 
 using WhereClause = std::shared_ptr<Condition>;

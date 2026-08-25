@@ -21,7 +21,7 @@ enum class TokenType {
     GROUP, HAVING,
     AVG, COUNT, SUM,
     MIN, MAX,
-    AS,
+    AS, IN, BETWEEN,
 
     // LITERALI
     NUMBER_LITERAL, STRING_LITERAL,

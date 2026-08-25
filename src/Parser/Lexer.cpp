@@ -265,6 +265,8 @@ TokenType Lexer::keyword_to_identifier(const std::string& upper)
     if(upper == "MIN") return TokenType::MIN;
     if(upper == "MAX") return TokenType::MAX;
     if(upper == "AS") return TokenType::AS;
+    if(upper == "IN") return TokenType::IN;
+    if(upper == "BETWEEN") return TokenType::BETWEEN;
 
     return TokenType::IDENTIFIER;
 }

@@ -61,11 +61,12 @@ public:
 class LogicalFilter : public LogicalNode {
 public:
     std::optional<WhereClause> where_clause_;
+    std::string outer_alias_;
     
-    explicit LogicalFilter(std::optional<WhereClause> where, std::unique_ptr<LogicalNode> child)
-        : where_clause_(where) {
+    explicit LogicalFilter(std::optional<WhereClause> where, std::unique_ptr<LogicalNode> child, const std::string& outer_alias = "")
+    : where_clause_(where), outer_alias_(outer_alias) {
         children_.push_back(std::move(child));
-    }
+    } 
     LogicalNodeType GetType() const override { return LogicalNodeType::FILTER; }
 };
 
